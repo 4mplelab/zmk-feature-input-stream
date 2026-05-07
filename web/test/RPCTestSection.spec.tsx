@@ -1,75 +1,163 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   createConnectedMockZMKApp,
   ZMKAppProvider,
 } from "@cormoran/zmk-studio-react-hook/testing";
-import { RPCTestSection, SUBSYSTEM_IDENTIFIER } from "../src/App";
+import { ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
+import { InputStreamSection, SUBSYSTEM_IDENTIFIER } from "../src/App";
+import {
+  Notification,
+  Response,
+} from "../src/proto/zmk/input_stream/input_stream";
 
-describe("RPCTestSection Component", () => {
-  describe("With Subsystem", () => {
-    it("should render RPC controls when subsystem is found", () => {
-      const mockZMKApp = createConnectedMockZMKApp({
-        deviceName: "Test Device",
-        subsystems: [SUBSYSTEM_IDENTIFIER],
-      });
+function encodeStateResponse(disturbHost = false) {
+  return Response.encode({
+    state: {
+      disturbHost,
+      layoutName: "Custom Layout",
+      keys: [
+        {
+          position: 0,
+          width: 100,
+          height: 100,
+          x: 0,
+          y: 0,
+          r: 0,
+          rx: 0,
+          ry: 0,
+          behaviorId: 7,
+          param1: 4,
+          param2: 0,
+        },
+      ],
+      behaviors: [{ id: 7, displayName: "&kp" }],
+    },
+  }).finish();
+}
 
-      render(
-        <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
-        </ZMKAppProvider>
-      );
+describe("InputStreamSection", () => {
+  beforeEach(() => {
+    jest
+      .spyOn(ZMKCustomSubsystem.prototype, "callRPC")
+      .mockResolvedValue(encodeStateResponse());
+  });
 
-      expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
-      expect(screen.getByText(/Send a sample request/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Value:/i)).toBeInTheDocument();
-      expect(screen.getByText(/Send Request/i)).toBeInTheDocument();
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("renders state from the firmware and subscribes to notifications", async () => {
+    const mockZMKApp = createConnectedMockZMKApp({
+      subsystems: [SUBSYSTEM_IDENTIFIER],
     });
 
-    it("should show default input value", () => {
-      const mockZMKApp = createConnectedMockZMKApp({
-        subsystems: [SUBSYSTEM_IDENTIFIER],
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <InputStreamSection />
+      </ZMKAppProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Custom Layout/i)).toBeInTheDocument();
+      expect(screen.getByText(/&kp 4/i)).toBeInTheDocument();
+    });
+
+    expect(mockZMKApp.onNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "custom", subsystemIndex: 0 })
+    );
+  });
+
+  it("updates active behavior and history from notifications", async () => {
+    const mockZMKApp = createConnectedMockZMKApp({
+      subsystems: [SUBSYSTEM_IDENTIFIER],
+    });
+
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <InputStreamSection />
+      </ZMKAppProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Custom Layout/i)).toBeInTheDocument();
+    });
+
+    const subscription = (mockZMKApp.onNotification as jest.Mock).mock
+      .calls[0][0];
+    act(() => {
+      subscription.callback({
+        subsystemIndex: 0,
+        payload: Notification.encode({
+          keyEvent: { position: 0, pressed: true },
+        }).finish(),
       });
+      subscription.callback({
+        subsystemIndex: 0,
+        payload: Notification.encode({
+          behaviorEvent: {
+            behaviorId: 7,
+            layer: 0,
+            position: 0,
+            param1: 4,
+            param2: 0,
+            pressed: true,
+          },
+        }).finish(),
+      });
+    });
 
-      render(
-        <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
-        </ZMKAppProvider>
+    await waitFor(() => {
+      expect(screen.getByText(/key 0 · layer 0/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Behavior history/i)).toHaveTextContent(
+        /press/
       );
-
-      const input = screen.getByLabelText(/Value:/i) as HTMLInputElement;
-      expect(input.value).toBe("42");
     });
   });
 
-  describe("Without Subsystem", () => {
-    it("should show warning when subsystem is not found", () => {
-      const mockZMKApp = createConnectedMockZMKApp({
-        deviceName: "Test Device",
-        subsystems: [],
-      });
+  it("toggles disturb host", async () => {
+    (ZMKCustomSubsystem.prototype.callRPC as jest.Mock)
+      .mockResolvedValueOnce(encodeStateResponse(false))
+      .mockResolvedValueOnce(encodeStateResponse(true));
 
-      render(
-        <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
-        </ZMKAppProvider>
-      );
+    const mockZMKApp = createConnectedMockZMKApp({
+      subsystems: [SUBSYSTEM_IDENTIFIER],
+    });
 
-      expect(
-        screen.getByText(/Subsystem "zmk__template" not found/i)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Make sure your firmware includes the template module/i
-        )
-      ).toBeInTheDocument();
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <InputStreamSection />
+      </ZMKAppProvider>
+    );
+
+    const checkbox = await screen.findByLabelText(/Disturb host/i);
+    expect(checkbox).not.toBeChecked();
+
+    await userEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Disturb host/i)).toBeChecked();
     });
   });
 
-  describe("Without ZMKAppContext", () => {
-    it("should not render when ZMKAppContext is not provided", () => {
-      const { container } = render(<RPCTestSection />);
-
-      expect(container.firstChild).toBeNull();
+  it("shows a warning when the subsystem is missing", () => {
+    const mockZMKApp = createConnectedMockZMKApp({
+      subsystems: [],
     });
+
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <InputStreamSection />
+      </ZMKAppProvider>
+    );
+
+    expect(
+      screen.getByText(/Subsystem "zmk__input_stream" not found/i)
+    ).toBeInTheDocument();
+  });
+
+  it("renders nothing without the app context", () => {
+    const { container } = render(<InputStreamSection />);
+    expect(container.firstChild).toBeNull();
   });
 });

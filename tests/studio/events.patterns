@@ -1,1 +1,3 @@
 s/.*custom_subsystem_init:.*Identifier: //p
+s/.*input_stream key position=\([0-9]\+\) pressed=\([01]\)/key position \1 pressed \2/p
+s/.*input_stream behavior position=\([0-9]\+\) layer=\([-0-9]\+\) behavior=[0-9]\+ pressed=\([01]\)/behavior position \1 layer \2 pressed \3/p

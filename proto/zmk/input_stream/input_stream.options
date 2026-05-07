@@ -1,0 +1,3 @@
+zmk.input_stream.ErrorResponse.message max_size:64
+zmk.input_stream.StateResponse.layout_name max_size:64
+zmk.input_stream.BehaviorInfo.display_name max_size:64

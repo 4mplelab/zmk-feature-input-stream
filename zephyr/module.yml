@@ -1,7 +1,4 @@
-# Delete all unused properties.
-
-# Give your module a name
-name: zmk-module-template-rename-please
+name: zmk-feature-input-stream
 build:
   # List your dependencies
   # depends:

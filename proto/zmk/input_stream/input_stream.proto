@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package zmk.input_stream;
+
+message Request {
+    oneof request_type {
+        bool get_state = 1;
+        bool set_disturb_host = 2;
+    }
+}
+
+message ErrorResponse { string message = 1; }
+
+message KeyInfo {
+    uint32 position = 1;
+    sint32 width = 2;
+    sint32 height = 3;
+    sint32 x = 4;
+    sint32 y = 5;
+    sint32 r = 6;
+    sint32 rx = 7;
+    sint32 ry = 8;
+    uint32 behavior_id = 9;
+    uint32 param1 = 10;
+    uint32 param2 = 11;
+}
+
+message BehaviorInfo {
+    uint32 id = 1;
+    string display_name = 2;
+}
+
+message StateResponse {
+    bool disturb_host = 1;
+    string layout_name = 2;
+    repeated KeyInfo keys = 3;
+    repeated BehaviorInfo behaviors = 4;
+}
+
+message Response {
+    oneof response_type {
+        StateResponse state = 1;
+        ErrorResponse error = 2;
+    }
+}
+
+message KeyEvent {
+    uint32 position = 1;
+    bool pressed = 2;
+}
+
+message BehaviorEvent {
+    uint32 behavior_id = 1;
+    sint32 layer = 2;
+    uint32 position = 3;
+    uint32 param1 = 4;
+    uint32 param2 = 5;
+    bool pressed = 6;
+}
+
+message Notification {
+    oneof notification_type {
+        KeyEvent key_event = 1;
+        BehaviorEvent behavior_event = 2;
+        bool disturb_host_changed = 3;
+    }
+}

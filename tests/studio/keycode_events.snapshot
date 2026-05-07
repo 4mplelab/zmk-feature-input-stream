@@ -1,1 +1,9 @@
-zmk__template, Security: Unsecured
+zmk__input_stream, Security: Unsecured
+key position 0 pressed 1
+behavior position 0 layer 0 pressed 1
+key position 0 pressed 0
+behavior position 0 layer 0 pressed 0
+key position 0 pressed 1
+behavior position 0 layer 0 pressed 1
+key position 0 pressed 0
+behavior position 0 layer 0 pressed 0
