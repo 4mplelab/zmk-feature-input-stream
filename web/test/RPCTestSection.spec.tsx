@@ -5,6 +5,7 @@ import {
   ZMKAppProvider,
 } from "@cormoran/zmk-studio-react-hook/testing";
 import { ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
+import * as zmkStudioClient from "@zmkfirmware/zmk-studio-ts-client";
 import { InputStreamSection, SUBSYSTEM_IDENTIFIER } from "../src/App";
 import {
   Notification,
@@ -15,25 +16,85 @@ function encodeStateResponse(disturbHost = false) {
   return Response.encode({
     state: {
       disturbHost,
-      layoutName: "Custom Layout",
-      keys: [
-        {
-          position: 0,
-          width: 100,
-          height: 100,
-          x: 0,
-          y: 0,
-          r: 0,
-          rx: 0,
-          ry: 0,
-          behaviorId: 7,
-          param1: 4,
-          param2: 0,
-        },
-      ],
-      behaviors: [{ id: 7, displayName: "&kp" }],
     },
   }).finish();
+}
+
+function mockOfficialStudioMetadata() {
+  jest.spyOn(zmkStudioClient, "call_rpc").mockImplementation(
+    async (
+      _connection,
+      request: {
+        keymap?: { getKeymap?: boolean; getPhysicalLayouts?: boolean };
+        behaviors?: {
+          listAllBehaviors?: boolean;
+          getBehaviorDetails?: { behaviorId: number };
+        };
+      }
+    ) => {
+      if (request.keymap?.getPhysicalLayouts) {
+        return {
+          keymap: {
+            getPhysicalLayouts: {
+              activeLayoutIndex: 0,
+              layouts: [
+                {
+                  name: "Custom Layout",
+                  keys: [
+                    {
+                      width: 100,
+                      height: 100,
+                      x: 0,
+                      y: 0,
+                      r: 0,
+                      rx: 0,
+                      ry: 0,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        };
+      }
+
+      if (request.keymap?.getKeymap) {
+        return {
+          keymap: {
+            getKeymap: {
+              layers: [
+                {
+                  id: 0,
+                  name: "Base",
+                  bindings: [{ behaviorId: 7, param1: 4, param2: 0 }],
+                },
+              ],
+              availableLayers: 0,
+              maxLayerNameLength: 32,
+            },
+          },
+        };
+      }
+
+      if (request.behaviors?.listAllBehaviors) {
+        return { behaviors: { listAllBehaviors: { behaviors: [7] } } };
+      }
+
+      if (request.behaviors?.getBehaviorDetails) {
+        return {
+          behaviors: {
+            getBehaviorDetails: {
+              id: request.behaviors.getBehaviorDetails.behaviorId,
+              displayName: "&kp",
+              metadata: [],
+            },
+          },
+        };
+      }
+
+      throw new Error("Unexpected Studio RPC request");
+    }
+  );
 }
 
 describe("InputStreamSection", () => {
@@ -41,6 +102,7 @@ describe("InputStreamSection", () => {
     jest
       .spyOn(ZMKCustomSubsystem.prototype, "callRPC")
       .mockResolvedValue(encodeStateResponse());
+    mockOfficialStudioMetadata();
   });
 
   afterEach(() => {

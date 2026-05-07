@@ -4,7 +4,7 @@
 [![Test](https://github.com/cormoran/zmk-feature-input-stream/actions/workflows/zmk-module.yml/badge.svg?branch=main)](https://github.com/cormoran/zmk-feature-input-stream/actions/workflows/zmk-module.yml) [![Devcontainer](https://github.com/cormoran/zmk-feature-input-stream/actions/workflows/devcontainer.yml/badge.svg?branch=main)](https://github.com/cormoran/zmk-feature-input-stream/actions/workflows/devcontainer.yml)
 
 This module streams raw key presses and resolved behavior press/release events to a custom ZMK Studio RPC subsystem.
-It includes a small web UI that visualizes the keyboard layout, shows pressed keys, lists active behaviors, and can temporarily stop sending input to the connected host while you test.
+Its web UI reuses the official ZMK Studio keymap and behavior APIs for layout and metadata, then combines them with the custom live event stream.
 
 ## Summary
 
@@ -49,7 +49,7 @@ It includes a small web UI that visualizes the keyboard layout, shows pressed ke
 - Live pressed key highlighting from raw key events
 - Active behavior press/release events
 - Behavior history in a terminal-like log
-- A **Disturb host** toggle that temporarily keeps input inside Studio
+- A **Disturb host** toggle that temporarily keeps input inside Studio until the device restarts
 
 ## Web UI
 

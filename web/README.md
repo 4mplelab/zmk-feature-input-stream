@@ -22,11 +22,11 @@ npm run lint
 
 ## Protocol
 
-The app uses the protobuf schema in `../proto/zmk/input_stream/input_stream.proto`.
+The app uses the protobuf schema in `../proto/zmk/input_stream/input_stream.proto` for live notifications and the official ZMK Studio `keymap` / `behaviors` RPC APIs for layout and binding metadata.
 Generated TypeScript files are written to `src/proto/`.
 
 ## Notes
 
 - The UI expects the firmware to expose the `zmk__input_stream` custom subsystem.
-- The **Disturb host** toggle is off by default.
-- Behavior names are loaded once from the initial state response and behavior notifications only send IDs.
+- The **Disturb host** toggle is off by default and resets after a reboot.
+- Behavior notifications only send IDs; names and layout metadata are loaded from the official Studio APIs.

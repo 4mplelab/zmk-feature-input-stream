@@ -18,30 +18,8 @@ export interface ErrorResponse {
   message: string;
 }
 
-export interface KeyInfo {
-  position: number;
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-  r: number;
-  rx: number;
-  ry: number;
-  behaviorId: number;
-  param1: number;
-  param2: number;
-}
-
-export interface BehaviorInfo {
-  id: number;
-  displayName: string;
-}
-
 export interface StateResponse {
   disturbHost: boolean;
-  layoutName: string;
-  keys: KeyInfo[];
-  behaviors: BehaviorInfo[];
 }
 
 export interface Response {
@@ -173,247 +151,14 @@ export const ErrorResponse: MessageFns<ErrorResponse> = {
   },
 };
 
-function createBaseKeyInfo(): KeyInfo {
-  return { position: 0, width: 0, height: 0, x: 0, y: 0, r: 0, rx: 0, ry: 0, behaviorId: 0, param1: 0, param2: 0 };
-}
-
-export const KeyInfo: MessageFns<KeyInfo> = {
-  encode(message: KeyInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.position !== 0) {
-      writer.uint32(8).uint32(message.position);
-    }
-    if (message.width !== 0) {
-      writer.uint32(16).sint32(message.width);
-    }
-    if (message.height !== 0) {
-      writer.uint32(24).sint32(message.height);
-    }
-    if (message.x !== 0) {
-      writer.uint32(32).sint32(message.x);
-    }
-    if (message.y !== 0) {
-      writer.uint32(40).sint32(message.y);
-    }
-    if (message.r !== 0) {
-      writer.uint32(48).sint32(message.r);
-    }
-    if (message.rx !== 0) {
-      writer.uint32(56).sint32(message.rx);
-    }
-    if (message.ry !== 0) {
-      writer.uint32(64).sint32(message.ry);
-    }
-    if (message.behaviorId !== 0) {
-      writer.uint32(72).uint32(message.behaviorId);
-    }
-    if (message.param1 !== 0) {
-      writer.uint32(80).uint32(message.param1);
-    }
-    if (message.param2 !== 0) {
-      writer.uint32(88).uint32(message.param2);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): KeyInfo {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseKeyInfo();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 8) {
-            break;
-          }
-
-          message.position = reader.uint32();
-          continue;
-        }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.width = reader.sint32();
-          continue;
-        }
-        case 3: {
-          if (tag !== 24) {
-            break;
-          }
-
-          message.height = reader.sint32();
-          continue;
-        }
-        case 4: {
-          if (tag !== 32) {
-            break;
-          }
-
-          message.x = reader.sint32();
-          continue;
-        }
-        case 5: {
-          if (tag !== 40) {
-            break;
-          }
-
-          message.y = reader.sint32();
-          continue;
-        }
-        case 6: {
-          if (tag !== 48) {
-            break;
-          }
-
-          message.r = reader.sint32();
-          continue;
-        }
-        case 7: {
-          if (tag !== 56) {
-            break;
-          }
-
-          message.rx = reader.sint32();
-          continue;
-        }
-        case 8: {
-          if (tag !== 64) {
-            break;
-          }
-
-          message.ry = reader.sint32();
-          continue;
-        }
-        case 9: {
-          if (tag !== 72) {
-            break;
-          }
-
-          message.behaviorId = reader.uint32();
-          continue;
-        }
-        case 10: {
-          if (tag !== 80) {
-            break;
-          }
-
-          message.param1 = reader.uint32();
-          continue;
-        }
-        case 11: {
-          if (tag !== 88) {
-            break;
-          }
-
-          message.param2 = reader.uint32();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  create(base?: DeepPartial<KeyInfo>): KeyInfo {
-    return KeyInfo.fromPartial(base ?? {});
-  },
-  fromPartial(object: DeepPartial<KeyInfo>): KeyInfo {
-    const message = createBaseKeyInfo();
-    message.position = object.position ?? 0;
-    message.width = object.width ?? 0;
-    message.height = object.height ?? 0;
-    message.x = object.x ?? 0;
-    message.y = object.y ?? 0;
-    message.r = object.r ?? 0;
-    message.rx = object.rx ?? 0;
-    message.ry = object.ry ?? 0;
-    message.behaviorId = object.behaviorId ?? 0;
-    message.param1 = object.param1 ?? 0;
-    message.param2 = object.param2 ?? 0;
-    return message;
-  },
-};
-
-function createBaseBehaviorInfo(): BehaviorInfo {
-  return { id: 0, displayName: "" };
-}
-
-export const BehaviorInfo: MessageFns<BehaviorInfo> = {
-  encode(message: BehaviorInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.id !== 0) {
-      writer.uint32(8).uint32(message.id);
-    }
-    if (message.displayName !== "") {
-      writer.uint32(18).string(message.displayName);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): BehaviorInfo {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseBehaviorInfo();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 8) {
-            break;
-          }
-
-          message.id = reader.uint32();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.displayName = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  create(base?: DeepPartial<BehaviorInfo>): BehaviorInfo {
-    return BehaviorInfo.fromPartial(base ?? {});
-  },
-  fromPartial(object: DeepPartial<BehaviorInfo>): BehaviorInfo {
-    const message = createBaseBehaviorInfo();
-    message.id = object.id ?? 0;
-    message.displayName = object.displayName ?? "";
-    return message;
-  },
-};
-
 function createBaseStateResponse(): StateResponse {
-  return { disturbHost: false, layoutName: "", keys: [], behaviors: [] };
+  return { disturbHost: false };
 }
 
 export const StateResponse: MessageFns<StateResponse> = {
   encode(message: StateResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.disturbHost !== false) {
       writer.uint32(8).bool(message.disturbHost);
-    }
-    if (message.layoutName !== "") {
-      writer.uint32(18).string(message.layoutName);
-    }
-    for (const v of message.keys) {
-      KeyInfo.encode(v!, writer.uint32(26).fork()).join();
-    }
-    for (const v of message.behaviors) {
-      BehaviorInfo.encode(v!, writer.uint32(34).fork()).join();
     }
     return writer;
   },
@@ -433,30 +178,6 @@ export const StateResponse: MessageFns<StateResponse> = {
           message.disturbHost = reader.bool();
           continue;
         }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.layoutName = reader.string();
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.keys.push(KeyInfo.decode(reader, reader.uint32()));
-          continue;
-        }
-        case 4: {
-          if (tag !== 34) {
-            break;
-          }
-
-          message.behaviors.push(BehaviorInfo.decode(reader, reader.uint32()));
-          continue;
-        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -472,9 +193,6 @@ export const StateResponse: MessageFns<StateResponse> = {
   fromPartial(object: DeepPartial<StateResponse>): StateResponse {
     const message = createBaseStateResponse();
     message.disturbHost = object.disturbHost ?? false;
-    message.layoutName = object.layoutName ?? "";
-    message.keys = object.keys?.map((e) => KeyInfo.fromPartial(e)) || [];
-    message.behaviors = object.behaviors?.map((e) => BehaviorInfo.fromPartial(e)) || [];
     return message;
   },
 };

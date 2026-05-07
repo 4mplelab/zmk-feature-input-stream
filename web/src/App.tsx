@@ -7,7 +7,17 @@ import {
   type CSSProperties,
 } from "react";
 import "./App.css";
+import {
+  call_rpc,
+  type RpcConnection,
+} from "@zmkfirmware/zmk-studio-ts-client";
 import { connect as serialConnect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+import type {
+  BehaviorBinding,
+  KeyPhysicalAttrs,
+  Keymap,
+  PhysicalLayouts,
+} from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import {
   ZMKConnection,
   ZMKCustomSubsystem,
@@ -15,7 +25,6 @@ import {
 } from "@cormoran/zmk-studio-react-hook";
 import {
   BehaviorEvent,
-  KeyInfo,
   Notification,
   Request,
   Response,
@@ -28,6 +37,18 @@ const KEY_UNIT = 0.72;
 
 type ActiveBehavior = BehaviorEvent & { id: string };
 type HistoryEntry = { id: string; text: string };
+type KeyDisplayInfo = KeyPhysicalAttrs & {
+  position: number;
+  behaviorId: number;
+  param1: number;
+  param2: number;
+};
+type LoadedInputStreamState = {
+  disturbHost: boolean;
+  layoutName: string;
+  keys: KeyDisplayInfo[];
+  behaviors: Map<number, string>;
+};
 
 function App() {
   return (
@@ -89,6 +110,102 @@ function decodeStateResponse(payload: Uint8Array | null): StateResponse {
   return response.state;
 }
 
+function decodeKeymapMetadata(
+  physicalLayouts: PhysicalLayouts,
+  keymap: Keymap
+): Pick<LoadedInputStreamState, "layoutName" | "keys"> {
+  const activeLayout =
+    physicalLayouts.layouts[physicalLayouts.activeLayoutIndex];
+  if (!activeLayout) {
+    throw new Error("Missing active physical layout");
+  }
+
+  const baseLayer = keymap.layers[0];
+  if (!baseLayer) {
+    throw new Error("Missing keymap layer data");
+  }
+
+  const keyCount = Math.min(
+    activeLayout.keys.length,
+    baseLayer.bindings.length
+  );
+  const keys = activeLayout.keys.slice(0, keyCount).map((key, position) => {
+    const binding = baseLayer.bindings[position] ?? createEmptyBinding();
+    return {
+      ...key,
+      position,
+      behaviorId: binding.behaviorId,
+      param1: binding.param1,
+      param2: binding.param2,
+    };
+  });
+
+  return {
+    layoutName: activeLayout.name || "Layout",
+    keys,
+  };
+}
+
+function createEmptyBinding(): BehaviorBinding {
+  return {
+    behaviorId: 0,
+    param1: 0,
+    param2: 0,
+  };
+}
+
+async function loadBehaviorNames(
+  connection: RpcConnection
+): Promise<Map<number, string>> {
+  const response = await call_rpc(connection, {
+    behaviors: { listAllBehaviors: true },
+  });
+  const behaviorIds = response.behaviors?.listAllBehaviors?.behaviors ?? [];
+
+  const detailResponses = await Promise.all(
+    behaviorIds.map((behaviorId) =>
+      call_rpc(connection, {
+        behaviors: { getBehaviorDetails: { behaviorId } },
+      })
+    )
+  );
+
+  return new Map(
+    detailResponses.flatMap((detailResponse) => {
+      const details = detailResponse.behaviors?.getBehaviorDetails;
+      return details ? [[details.id, details.displayName] as const] : [];
+    })
+  );
+}
+
+async function loadInputStreamState(
+  connection: RpcConnection,
+  service: ZMKCustomSubsystem
+): Promise<LoadedInputStreamState> {
+  const statePayload = Request.encode(
+    Request.create({ getState: true })
+  ).finish();
+  const [state, keymapResponse, physicalLayoutsResponse, behaviors] =
+    await Promise.all([
+      service.callRPC(statePayload).then(decodeStateResponse),
+      call_rpc(connection, { keymap: { getKeymap: true } }),
+      call_rpc(connection, { keymap: { getPhysicalLayouts: true } }),
+      loadBehaviorNames(connection),
+    ]);
+
+  const keymap = keymapResponse.keymap?.getKeymap;
+  const physicalLayouts = physicalLayoutsResponse.keymap?.getPhysicalLayouts;
+  if (!keymap || !physicalLayouts) {
+    throw new Error("Missing official Studio keymap metadata");
+  }
+
+  return {
+    disturbHost: state.disturbHost,
+    ...decodeKeymapMetadata(physicalLayouts, keymap),
+    behaviors,
+  };
+}
+
 function formatBehaviorLabel(
   behaviorId: number,
   behaviors: Map<number, string>,
@@ -118,7 +235,7 @@ function formatHistoryEntry(
   return `${action.padEnd(7)} key ${event.position.toString().padStart(2, "0")}  layer ${event.layer}  ${label}`;
 }
 
-function buildKeyStyle(keys: KeyInfo[]) {
+function buildKeyStyle(keys: KeyDisplayInfo[]) {
   const width = Math.max(...keys.map((key) => key.x + key.width), 100);
   const height = Math.max(...keys.map((key) => key.y + key.height), 100);
   return {
@@ -133,7 +250,7 @@ export function InputStreamSection() {
   const [error, setError] = useState<string | null>(null);
   const [disturbHost, setDisturbHost] = useState(false);
   const [layoutName, setLayoutName] = useState("");
-  const [keys, setKeys] = useState<KeyInfo[]>([]);
+  const [keys, setKeys] = useState<KeyDisplayInfo[]>([]);
   const [behaviors, setBehaviors] = useState<Map<number, string>>(new Map());
   const behaviorNamesRef = useRef<Map<number, string>>(new Map());
   const [activePositions, setActivePositions] = useState<Set<number>>(
@@ -150,13 +267,11 @@ export function InputStreamSection() {
       return;
     }
 
-    const service = new ZMKCustomSubsystem(
-      zmkApp.state.connection,
-      subsystem.index
-    );
+    const connection = zmkApp.state.connection;
+    const service = new ZMKCustomSubsystem(connection, subsystem.index);
     let cancelled = false;
 
-    const applyState = (state: StateResponse) => {
+    const applyState = (state: LoadedInputStreamState) => {
       if (cancelled) {
         return;
       }
@@ -164,21 +279,15 @@ export function InputStreamSection() {
       setDisturbHost(state.disturbHost);
       setLayoutName(state.layoutName);
       setKeys(state.keys);
-      const nextBehaviors = new Map(
-        state.behaviors.map((behavior) => [behavior.id, behavior.displayName])
-      );
-      behaviorNamesRef.current = nextBehaviors;
-      setBehaviors(nextBehaviors);
+      behaviorNamesRef.current = state.behaviors;
+      setBehaviors(state.behaviors);
       setError(null);
     };
 
     const loadState = async () => {
       setIsLoading(true);
       try {
-        const payload = Request.encode(
-          Request.create({ getState: true })
-        ).finish();
-        applyState(decodeStateResponse(await service.callRPC(payload)));
+        applyState(await loadInputStreamState(connection, service));
       } catch (loadError) {
         if (!cancelled) {
           setError(
