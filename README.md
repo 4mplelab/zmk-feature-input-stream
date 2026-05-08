@@ -43,6 +43,9 @@ In your keyboard's `.conf` file:
 ```
 CONFIG_ZMK_INPUT_STREAM_FEATURE=y
 CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC=y
+
+# Encoding nanopb requires more stack space
+CONFIG_ZMK_LOW_PRIORITY_THREAD_STACK_SIZE=2048
 ```
 
 `CONFIG_ZMK_STUDIO=y` is also required (and the `studio-rpc-usb-uart` snippet or equivalent transport).
@@ -85,3 +88,8 @@ python3 -m unittest
 # Run web tests
 cd web && npm test
 ```
+
+## Known issue
+
+If device is disconnected from web UI before stopping stream, zmk zmk_workqueue_lowprio_work_q becomes in stuck to wait finishing sending streaming data.
+Timeout improvement in zmk is required for improvement.

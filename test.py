@@ -72,6 +72,8 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_ZMK_STUDIO=y",
                         "CONFIG_ZMK_INPUT_STREAM_FEATURE=y",
                         "CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC=y",
+                        "CONFIG_ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE=8",
+                        "CONFIG_ZMK_LOW_PRIORITY_WORK_QUEUE=y",
                     ],
                     device=[],
                 ),

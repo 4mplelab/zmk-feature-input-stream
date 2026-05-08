@@ -3,6 +3,7 @@
 #include <string.h>
 #include <zmk/studio/custom.h>
 #include <zmk/input_stream/input_stream.pb.h>
+#include <zmk/workqueue.h>
 
 #include <zmk/events/position_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
@@ -37,6 +38,8 @@ static int get_own_subsystem_index(void) {
     return -1;
 }
 
+/* ── Direct notification send (called only from the low-priority work handler) ── */
+
 static zmk_input_stream_Notification s_notification;
 
 static bool encode_notification_payload(pb_ostream_t *stream, const pb_field_t *field,
@@ -46,7 +49,7 @@ static bool encode_notification_payload(pb_ostream_t *stream, const pb_field_t *
         stream, field, zmk_input_stream_Notification_fields, notif);
 }
 
-static void send_notification(const zmk_input_stream_Notification *notif) {
+static void send_notification_direct(const zmk_input_stream_Notification *notif) {
     int idx = get_own_subsystem_index();
     if (idx < 0) {
         LOG_ERR("input_stream subsystem not found");
@@ -63,6 +66,44 @@ static void send_notification(const zmk_input_stream_Notification *notif) {
     };
     raise_zmk_studio_custom_notification(custom_notif);
 }
+
+/* ── Notification queue + low-priority sender ──────────────────────────── */
+
+/* Fixed-capacity message queue. Alignment 4 matches ZMK's behavior_queue.c pattern. */
+K_MSGQ_DEFINE(notif_queue, sizeof(zmk_input_stream_Notification),
+              CONFIG_ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE, 4);
+
+/* Tracks items currently in the queue (incremented on put, decremented on get). */
+static atomic_t notif_pending = ATOMIC_INIT(0);
+
+static void notif_send_work_handler(struct k_work *work);
+static K_WORK_DEFINE(notif_send_work, notif_send_work_handler);
+
+static void notif_send_work_handler(struct k_work *work) {
+    zmk_input_stream_Notification notif;
+    while (k_msgq_get(&notif_queue, &notif, K_NO_WAIT) == 0) {
+        atomic_dec(&notif_pending);
+        send_notification_direct(&notif);
+    }
+}
+
+/**
+ * Enqueue a notification for low-priority delivery.
+ * Called from event handlers; returns immediately so the event thread is not stalled.
+ * Drops silently if the queue is full (limit = CONFIG_ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE).
+ */
+static void enqueue_notification(const zmk_input_stream_Notification *notif) {
+    if (atomic_get(&notif_pending) >= CONFIG_ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE) {
+        LOG_DBG("Notification queue full, dropping");
+        return;
+    }
+    if (k_msgq_put(&notif_queue, notif, K_NO_WAIT) == 0) {
+        atomic_inc(&notif_pending);
+        k_work_submit_to_queue(zmk_workqueue_lowprio_work_q(), &notif_send_work);
+    }
+}
+
+/* ── RPC handler ───────────────────────────────────────────────────────── */
 
 static bool input_stream_rpc_handle_request(const zmk_custom_CallRequest *raw_request,
                                             pb_callback_t *encode_response) {
@@ -132,7 +173,7 @@ static int on_position_state_changed(const zmk_event_t *eh) {
         notif.notification_type.key_event.param2 = binding->param2;
     }
 
-    send_notification(&notif);
+    enqueue_notification(&notif);
     return ZMK_EV_EVENT_BUBBLE;
 }
 
@@ -148,7 +189,7 @@ static int on_layer_state_changed(const zmk_event_t *eh) {
     notif.which_notification_type = zmk_input_stream_Notification_layer_change_tag;
     notif.notification_type.layer_change.layer_index = zmk_keymap_highest_layer_active();
 
-    send_notification(&notif);
+    enqueue_notification(&notif);
     return ZMK_EV_EVENT_BUBBLE;
 }
 
