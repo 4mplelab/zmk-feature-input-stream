@@ -10,9 +10,11 @@ jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
   call_rpc: jest.fn().mockResolvedValue({}),
 }));
 
+const PROPS = { deviceName: "Test Device", disconnect: jest.fn() };
+
 describe("InputStreamSection Component", () => {
   describe("With Subsystem", () => {
-    it("should render streaming controls when subsystem is found", () => {
+    it("should render stream toggle and device name", () => {
       const mockZMKApp = createConnectedMockZMKApp({
         deviceName: "Test Device",
         subsystems: [SUBSYSTEM_IDENTIFIER],
@@ -20,16 +22,17 @@ describe("InputStreamSection Component", () => {
 
       render(
         <ZMKAppProvider value={mockZMKApp}>
-          <InputStreamSection />
+          <InputStreamSection {...PROPS} />
         </ZMKAppProvider>
       );
 
-      expect(screen.getByText(/Enable Stream/i)).toBeInTheDocument();
+      expect(screen.getByText(/Stream/i)).toBeInTheDocument();
+      expect(screen.getByText("Test Device")).toBeInTheDocument();
     });
   });
 
   describe("Without Subsystem", () => {
-    it("should show warning when subsystem is not found", () => {
+    it("should show 'No subsystem' warning", () => {
       const mockZMKApp = createConnectedMockZMKApp({
         deviceName: "Test Device",
         subsystems: [],
@@ -37,19 +40,17 @@ describe("InputStreamSection Component", () => {
 
       render(
         <ZMKAppProvider value={mockZMKApp}>
-          <InputStreamSection />
+          <InputStreamSection {...PROPS} />
         </ZMKAppProvider>
       );
 
-      expect(
-        screen.getByText(/Subsystem "zmk__input_stream" not found/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/No subsystem/i)).toBeInTheDocument();
     });
   });
 
   describe("Without ZMKAppContext", () => {
     it("should not render when ZMKAppContext is not provided", () => {
-      const { container } = render(<InputStreamSection />);
+      const { container } = render(<InputStreamSection {...PROPS} />);
       expect(container.firstChild).toBeNull();
     });
   });

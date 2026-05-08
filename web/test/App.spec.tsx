@@ -12,28 +12,21 @@ jest.mock("@zmkfirmware/zmk-studio-ts-client/transport/serial", () => ({
   connect: jest.fn(),
 }));
 
+jest.mock("@zmkfirmware/zmk-studio-ts-client/transport/gatt", () => ({
+  connect: jest.fn(),
+}));
+
 describe("App Component", () => {
   describe("Basic Rendering", () => {
-    it("should render the application header", () => {
+    it("should render the app title and connect buttons when disconnected", () => {
       render(<App />);
-      expect(screen.getAllByText(/ZMK Input Stream/i).length).toBeGreaterThan(
-        0
-      );
+      // Status bar shows the title
       expect(
-        screen.getAllByText(/Live key visualizer/i).length
-      ).toBeGreaterThan(0);
-    });
-
-    it("should render connection button when disconnected", () => {
-      render(<App />);
-      expect(screen.getByText(/Connect Serial/i)).toBeInTheDocument();
-    });
-
-    it("should render footer", () => {
-      render(<App />);
-      expect(
-        screen.getAllByText(/Live key visualizer/i).length
-      ).toBeGreaterThan(0);
+        screen.getByText(/ZMK Input Stream/i, { selector: ".app-title" })
+      ).toBeInTheDocument();
+      // Both connection buttons present
+      expect(screen.getByText(/^Serial$/i)).toBeInTheDocument();
+      expect(screen.getByText(/^BLE$/i)).toBeInTheDocument();
     });
   });
 
@@ -44,7 +37,7 @@ describe("App Component", () => {
       mocks = setupZMKMocks();
     });
 
-    it("should connect to device when connect button is clicked", async () => {
+    it("should show connected state after clicking Serial", async () => {
       mocks.mockSuccessfulConnection({
         deviceName: "Test Keyboard",
         subsystems: ["zmk__input_stream"],
@@ -55,26 +48,26 @@ describe("App Component", () => {
       (serial_connect as jest.Mock).mockResolvedValue(mocks.mockTransport);
 
       render(<App />);
-      expect(screen.getByText(/Connect Serial/i)).toBeInTheDocument();
 
       const user = userEvent.setup();
-      await user.click(screen.getByText(/Connect Serial/i));
+      await user.click(screen.getByText(/^Serial$/i));
 
-      // "Connected to:" and device name are in separate elements — match via textContent
       await waitFor(
         () => {
           const found = screen.getAllByText(
             (_, el) =>
-              el?.textContent
-                ?.toLowerCase()
-                .includes("connected to: test keyboard") ?? false
+              el?.textContent?.toLowerCase().includes("test keyboard") ?? false
           );
           expect(found.length).toBeGreaterThan(0);
         },
         { timeout: 3000 }
       );
 
-      expect(screen.getByText(/Disconnect/i)).toBeInTheDocument();
+      // Stream button and disconnect in status bar
+      expect(
+        screen.getByText(/^Stream$/i, { selector: "button" })
+      ).toBeInTheDocument();
+      expect(screen.getByTitle(/Disconnect/i)).toBeInTheDocument();
     });
   });
 });

@@ -1,10 +1,12 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import "./App.css";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+import { connect as gatt_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/gatt";
 import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
 import type {
   Keymap,
   PhysicalLayouts,
+  KeyPhysicalAttrs,
   BehaviorBinding,
 } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import type { GetBehaviorDetailsResponse } from "@zmkfirmware/zmk-studio-ts-client/behaviors";
@@ -115,13 +117,40 @@ const HID_KEY_NAMES: Record<number, string> = {
 function hidUsageToLabel(usage: number): string {
   const page = (usage >>> 16) & 0xff;
   const id = usage & 0xffff;
-  if (page === 0x07 || page === 0x00) {
+  if (page === 0x07 || page === 0x00)
     return HID_KEY_NAMES[id] ?? `K${id.toString(16).toUpperCase()}`;
-  }
-  if (page === 0x0c) {
-    return `M${id.toString(16).toUpperCase()}`;
-  }
+  if (page === 0x0c) return `M${id.toString(16).toUpperCase()}`;
   return `0x${usage.toString(16).toUpperCase()}`;
+}
+
+// ─── &trans helpers ────────────────────────────────────────────────────────
+function isTransparent(
+  binding: BehaviorBinding,
+  behaviorMap: Map<number, GetBehaviorDetailsResponse>
+): boolean {
+  const det = behaviorMap.get(binding.behaviorId);
+  return det?.displayName.toLowerCase().startsWith("transparent") ?? false;
+}
+
+function isKpBehavior(det: GetBehaviorDetailsResponse): boolean {
+  const n = det.displayName.toLowerCase();
+  return n === "key press" || n === "kp";
+}
+
+/** Walk from fromLayer down to 0 and return first non-transparent binding. */
+function getEffectiveBinding(
+  keymap: Keymap,
+  position: number,
+  fromLayer: number,
+  behaviorMap: Map<number, GetBehaviorDetailsResponse>
+): BehaviorBinding | null {
+  for (let i = fromLayer; i >= 0; i--) {
+    const layer = keymap.layers[i];
+    if (!layer || position >= layer.bindings.length) continue;
+    const b = layer.bindings[position];
+    if (!isTransparent(b, behaviorMap)) return b;
+  }
+  return null;
 }
 
 // ─── Audio ────────────────────────────────────────────────────────────────
@@ -131,8 +160,7 @@ function playBeep(position: number) {
   try {
     if (!audioCtx) audioCtx = new AudioContext();
     if (audioCtx.state === "suspended") audioCtx.resume();
-    const semitone = position % 24;
-    const freq = 261.63 * Math.pow(2, semitone / 12);
+    const freq = 261.63 * Math.pow(2, (position % 24) / 12);
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.connect(gain);
@@ -151,59 +179,47 @@ function playBeep(position: number) {
 // ─── Types ────────────────────────────────────────────────────────────────
 interface BehaviorEvent {
   position: number;
-  pressed: boolean;
+  behaviorId: number;
   behaviorName: string;
   param1: number;
-  timestamp: number;
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────
 function App() {
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>ZMK Input Stream</h1>
-        <p>Live key visualizer</p>
-      </header>
-
       <ZMKConnection
         renderDisconnected={({ connect, isLoading, error }) => (
-          <section className="card">
-            <h2>Device Connection</h2>
-            {isLoading && <p>Connecting...</p>}
-            {error && (
-              <div className="error-message">
-                <p>{error}</p>
+          <div className="status-bar disconnected">
+            <span className="app-title">ZMK Input Stream</span>
+            {error && <span className="status-error">{error}</span>}
+            {isLoading ? (
+              <span className="status-hint">Connecting…</span>
+            ) : (
+              <div className="connect-btns">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => connect(serial_connect)}
+                >
+                  Serial
+                </button>
+                <button
+                  className="btn btn-ble"
+                  onClick={() => connect(gatt_connect)}
+                >
+                  BLE
+                </button>
               </div>
             )}
-            {!isLoading && (
-              <button
-                className="btn btn-primary"
-                onClick={() => connect(serial_connect)}
-              >
-                Connect Serial
-              </button>
-            )}
-          </section>
+          </div>
         )}
         renderConnected={({ disconnect, deviceName }) => (
-          <>
-            <section className="card">
-              <h2>Device Connection</h2>
-              <div className="device-info">
-                <span>
-                  Connected to: <strong>{deviceName}</strong>
-                </span>
-              </div>
-              <button className="btn btn-secondary" onClick={disconnect}>
-                Disconnect
-              </button>
-            </section>
-            <InputStreamSection />
-          </>
+          <InputStreamSection
+            deviceName={deviceName ?? ""}
+            disconnect={disconnect}
+          />
         )}
       />
-
       <footer className="app-footer">
         <p>
           <strong>ZMK Input Stream</strong> — Live key visualizer
@@ -213,8 +229,16 @@ function App() {
   );
 }
 
-// ─── Main section ─────────────────────────────────────────────────────────
-export function InputStreamSection() {
+// ─── InputStreamSection ───────────────────────────────────────────────────
+interface InputStreamSectionProps {
+  deviceName: string;
+  disconnect: () => void;
+}
+
+export function InputStreamSection({
+  deviceName,
+  disconnect,
+}: InputStreamSectionProps) {
   const zmkApp = useContext(ZMKAppContext);
   const connection = zmkApp?.state.connection ?? null;
   const subsystem = zmkApp?.findSubsystem(SUBSYSTEM_IDENTIFIER) ?? null;
@@ -240,7 +264,7 @@ export function InputStreamSection() {
   const [jsKeycodes, setJsKeycodes] = useState<string[]>([]);
   const [currentJsKey, setCurrentJsKey] = useState<string | null>(null);
 
-  // Load keymap + behaviors when connection is established
+  // Load keymap + behaviors on connect
   useEffect(() => {
     if (!connection) return;
     let cancelled = false;
@@ -254,7 +278,6 @@ export function InputStreamSection() {
           call_rpc(connection, { behaviors: { listAllBehaviors: true } }),
         ]);
         if (cancelled) return;
-
         if (layoutResp.keymap?.getPhysicalLayouts)
           setPhysicalLayouts(layoutResp.keymap.getPhysicalLayouts);
         if (keymapResp.keymap?.getKeymap)
@@ -291,7 +314,7 @@ export function InputStreamSection() {
     };
   }, [connection]);
 
-  // Subscribe to custom notifications
+  // Subscribe to notifications from firmware
   useEffect(() => {
     if (!zmkApp || !subsystem) return;
     const unsubscribe = zmkApp.onNotification({
@@ -312,14 +335,12 @@ export function InputStreamSection() {
             if (pressed) {
               setEverPressedKeys((prev) => new Set([...prev, position]));
               setBehaviorHistory((prev) => {
-                const bDet = behaviorMap.get(behaviorId);
-                const name = bDet?.displayName ?? `#${behaviorId}`;
+                const det = behaviorMap.get(behaviorId);
                 const entry: BehaviorEvent = {
                   position,
-                  pressed,
-                  behaviorName: name,
+                  behaviorId,
+                  behaviorName: det?.displayName ?? `#${behaviorId}`,
                   param1,
-                  timestamp: Date.now(),
                 };
                 return [entry, ...prev].slice(0, 20);
               });
@@ -336,30 +357,30 @@ export function InputStreamSection() {
     return unsubscribe;
   }, [zmkApp, subsystem, behaviorMap]);
 
-  // JS keycode capture
+  // Capture JS key events
   useEffect(() => {
-    const pressedSet = new Set<string>();
-    const onKeyDown = (e: KeyboardEvent) => {
-      const label = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      if (pressedSet.has(label)) return;
-      pressedSet.add(label);
-      setCurrentJsKey(label);
-      setJsKeycodes((prev) => [label, ...prev].slice(0, 20));
+    const held = new Set<string>();
+    const onDown = (e: KeyboardEvent) => {
+      const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if (held.has(k)) return;
+      held.add(k);
+      setCurrentJsKey(k);
+      setJsKeycodes((prev) => [k, ...prev].slice(0, 20));
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      const label = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      pressedSet.delete(label);
-      setCurrentJsKey((cur) => (cur === label ? null : cur));
+    const onUp = (e: KeyboardEvent) => {
+      const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      held.delete(k);
+      setCurrentJsKey((cur) => (cur === k ? null : cur));
     };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
     };
   }, []);
 
-  // Streaming toggle
+  // Stream toggle
   const toggleStreaming = useCallback(async () => {
     if (!connection || !subsystem) return;
     setStreamError(null);
@@ -385,57 +406,56 @@ export function InputStreamSection() {
 
   if (!zmkApp) return null;
 
-  if (!subsystem) {
-    return (
-      <section className="card">
-        <div className="warning-message">
-          <p>
-            Subsystem &quot;{SUBSYSTEM_IDENTIFIER}&quot; not found. Make sure
-            your firmware includes the input stream module.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
   const layout =
     physicalLayouts?.layouts[physicalLayouts.activeLayoutIndex] ?? null;
-  const activeLayerData =
-    keymap?.layers[activeLayer] ?? keymap?.layers[0] ?? null;
 
   return (
     <>
-      {/* Streaming controls */}
-      <section className="card">
-        <div className="stream-controls">
-          <div className="stream-status">
-            <span
-              className={`stream-indicator ${streamingEnabled ? "active" : ""}`}
-            />
-            <span>{streamingEnabled ? "Streaming" : "Stream off"}</span>
-            {activeLayer !== undefined && (
-              <span className="layer-badge">Layer {activeLayer}</span>
-            )}
-          </div>
+      {/* ── Compact status bar ── */}
+      <div className="status-bar connected">
+        <span
+          className={`stream-dot ${streamingEnabled ? "on" : ""}`}
+          title={streamingEnabled ? "Streaming" : "Stream off"}
+        />
+        <span className="status-device">{deviceName}</span>
+        <span className="layer-badge">Layer {activeLayer}</span>
+        {subsystem ? (
           <button
-            className={`btn ${streamingEnabled ? "btn-danger" : "btn-primary"}`}
+            className={`btn btn-sm ${streamingEnabled ? "btn-danger" : "btn-primary"}`}
             onClick={toggleStreaming}
           >
-            {streamingEnabled ? "Disable Stream" : "Enable Stream"}
+            {streamingEnabled ? "Stop" : "Stream"}
           </button>
-        </div>
-        {streamError && <p className="error-text">{streamError}</p>}
-        {isLoading && <p className="hint-text">Loading layout…</p>}
-        {loadError && <p className="error-text">Layout error: {loadError}</p>}
-      </section>
+        ) : (
+          <span
+            className="status-warn"
+            title={`Subsystem "${SUBSYSTEM_IDENTIFIER}" not found`}
+          >
+            No subsystem
+          </span>
+        )}
+        {(streamError || loadError) && (
+          <span className="status-error" title={streamError ?? loadError ?? ""}>
+            ⚠
+          </span>
+        )}
+        {isLoading && <span className="status-hint">Loading…</span>}
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={disconnect}
+          title="Disconnect"
+        >
+          ×
+        </button>
+      </div>
 
-      {/* Keyboard layout */}
-      {layout && (
-        <section className="card">
-          <h2>Keyboard Layout</h2>
+      {/* ── Keyboard layout ── */}
+      {layout && keymap && (
+        <section className="card layout-card">
           <KeyboardLayoutView
             layout={layout}
-            bindings={activeLayerData?.bindings ?? []}
+            keymap={keymap}
+            activeLayer={activeLayer}
             behaviorMap={behaviorMap}
             pressedKeys={pressedKeys}
             everPressedKeys={everPressedKeys}
@@ -443,8 +463,8 @@ export function InputStreamSection() {
         </section>
       )}
 
-      {/* History panels */}
-      <section className="card history-section">
+      {/* ── History panels ── */}
+      <section className="card">
         <div className="history-panels">
           <BehaviorHistoryPanel
             history={behaviorHistory}
@@ -457,12 +477,47 @@ export function InputStreamSection() {
   );
 }
 
-// ─── Keyboard layout view ─────────────────────────────────────────────────
-const SCALE = 0.48; // px per "100th-of-U" unit
+// ─── Layout bounds (rotation-aware) ───────────────────────────────────────
+function layoutBounds(keys: KeyPhysicalAttrs[]): {
+  maxX: number;
+  maxY: number;
+} {
+  let maxX = 0,
+    maxY = 0;
+  for (const k of keys) {
+    if (k.r === 0) {
+      maxX = Math.max(maxX, k.x + k.width);
+      maxY = Math.max(maxY, k.y + k.height);
+    } else {
+      const rad = (k.r / 100) * (Math.PI / 180);
+      const cos = Math.cos(rad),
+        sin = Math.sin(rad);
+      const corners = [
+        [k.x, k.y],
+        [k.x + k.width, k.y],
+        [k.x + k.width, k.y + k.height],
+        [k.x, k.y + k.height],
+      ];
+      for (const [cx, cy] of corners) {
+        const dx = cx - k.rx,
+          dy = cy - k.ry;
+        maxX = Math.max(maxX, k.rx + dx * cos - dy * sin);
+        maxY = Math.max(maxY, k.ry + dx * sin + dy * cos);
+      }
+    }
+  }
+  return { maxX, maxY };
+}
 
+const LAYOUT_MAX_PX = 820; // target width in px (accounts for card padding)
+const SCALE_MIN = 0.28;
+const SCALE_MAX = 0.65;
+
+// ─── Keyboard layout view ─────────────────────────────────────────────────
 interface KeyboardLayoutViewProps {
   layout: PhysicalLayouts["layouts"][number];
-  bindings: BehaviorBinding[];
+  keymap: Keymap;
+  activeLayer: number;
   behaviorMap: Map<number, GetBehaviorDetailsResponse>;
   pressedKeys: Set<number>;
   everPressedKeys: Set<number>;
@@ -470,37 +525,42 @@ interface KeyboardLayoutViewProps {
 
 function KeyboardLayoutView({
   layout,
-  bindings,
+  keymap,
+  activeLayer,
   behaviorMap,
   pressedKeys,
   everPressedKeys,
 }: KeyboardLayoutViewProps) {
-  const maxX = layout.keys.reduce((m, k) => Math.max(m, k.x + k.width), 0);
-  const maxY = layout.keys.reduce((m, k) => Math.max(m, k.y + k.height), 0);
+  const { maxX, maxY } = layoutBounds(layout.keys);
+  const scale =
+    maxX > 0
+      ? Math.max(SCALE_MIN, Math.min(SCALE_MAX, LAYOUT_MAX_PX / maxX))
+      : 0.48;
 
   return (
     <div
       className="keyboard-layout"
-      style={{ width: maxX * SCALE, height: maxY * SCALE }}
+      style={{
+        width: Math.ceil(maxX * scale) + 2,
+        height: Math.ceil(maxY * scale) + 2,
+      }}
     >
       {layout.keys.map((key, i) => {
-        const binding = bindings[i];
-        const label = binding ? getBindingLabel(binding, behaviorMap) : "";
-        const pressed = pressedKeys.has(i);
-        const everPressed = everPressedKeys.has(i);
+        const binding = getEffectiveBinding(
+          keymap,
+          i,
+          activeLayer,
+          behaviorMap
+        );
+        const label = binding ? getKpLabel(binding, behaviorMap) : "";
         return (
           <KeyCap
             key={i}
-            x={key.x * SCALE}
-            y={key.y * SCALE}
-            width={key.width * SCALE}
-            height={key.height * SCALE}
-            r={key.r / 100}
-            rx={key.rx * SCALE}
-            ry={key.ry * SCALE}
+            keyAttrs={key}
+            scale={scale}
             label={label}
-            pressed={pressed}
-            everPressed={everPressed}
+            pressed={pressedKeys.has(i)}
+            everPressed={everPressedKeys.has(i)}
           />
         );
       })}
@@ -508,51 +568,44 @@ function KeyboardLayoutView({
   );
 }
 
-function getBindingLabel(
+function getKpLabel(
   binding: BehaviorBinding,
   behaviorMap: Map<number, GetBehaviorDetailsResponse>
 ): string {
   const det = behaviorMap.get(binding.behaviorId);
-  if (!det) return "";
-  const name = det.displayName.toLowerCase();
-  if (name === "key press" || name === "kp") {
-    return hidUsageToLabel(binding.param1);
-  }
-  return "";
+  if (!det || !isKpBehavior(det)) return "";
+  return hidUsageToLabel(binding.param1);
 }
 
 interface KeyCapProps {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  r: number;
-  rx: number;
-  ry: number;
+  keyAttrs: KeyPhysicalAttrs;
+  scale: number;
   label: string;
   pressed: boolean;
   everPressed: boolean;
 }
 
-function KeyCap({
-  x,
-  y,
-  width,
-  height,
-  r,
-  rx,
-  ry,
-  label,
-  pressed,
-  everPressed,
-}: KeyCapProps) {
-  const transform = r !== 0 ? `rotate(${r}deg)` : undefined;
-  const transformOrigin = r !== 0 ? `${rx}px ${ry}px` : undefined;
+function KeyCap({ keyAttrs, scale, label, pressed, everPressed }: KeyCapProps) {
+  const { x, y, width, height, r, rx, ry } = keyAttrs;
+  const deg = r / 100;
+
+  // transform-origin is relative to the key's top-left corner
+  const originX = (rx - x) * scale;
+  const originY = (ry - y) * scale;
 
   return (
     <div
-      className={`keycap ${pressed ? "keycap-pressed" : ""} ${everPressed ? "keycap-ever-pressed" : ""}`}
-      style={{ left: x, top: y, width, height, transform, transformOrigin }}
+      className={`keycap${pressed ? " keycap-pressed" : ""}${everPressed ? " keycap-ever-pressed" : ""}`}
+      style={{
+        left: x * scale,
+        top: y * scale,
+        width: width * scale,
+        height: height * scale,
+        ...(deg !== 0 && {
+          transform: `rotate(${deg}deg)`,
+          transformOrigin: `${originX}px ${originY}px`,
+        }),
+      }}
     >
       <span className="keycap-label">{label}</span>
       {everPressed && <span className="keycap-dot" />}
@@ -576,17 +629,9 @@ function BehaviorHistoryPanel({
       ) : (
         <ul className="history-list">
           {history.map((ev, i) => {
-            const det = behaviorMap.get(
-              history.find((h) => h.behaviorName === ev.behaviorName)
-                ? ([...behaviorMap.values()].find(
-                    (d) => d.displayName === ev.behaviorName
-                  )?.id ?? -1)
-                : -1
-            );
-            const isKp =
-              det?.displayName.toLowerCase() === "key press" ||
-              det?.displayName.toLowerCase() === "kp";
-            const paramStr = isKp ? hidUsageToLabel(ev.param1) : "";
+            const det = behaviorMap.get(ev.behaviorId);
+            const paramStr =
+              det && isKpBehavior(det) ? hidUsageToLabel(ev.param1) : "";
             return (
               <li key={i} className="history-item">
                 <span className="history-pos">#{ev.position}</span>
@@ -620,7 +665,7 @@ function JsKeycodePanel({
           {history.map((k, i) => (
             <li
               key={i}
-              className={`history-item ${i === 0 && current === k ? "history-item-active" : ""}`}
+              className={`history-item${i === 0 && current === k ? " history-item-active" : ""}`}
             >
               {k}
             </li>
