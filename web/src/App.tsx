@@ -677,7 +677,12 @@ function JsKeycodePanel({
   return (
     <div className="history-panel">
       <h3>JS Key Events</h3>
-      {current && <div className="current-key">{current}</div>}
+      <div
+        className="current-key"
+        style={{ visibility: current ? "visible" : "hidden" }}
+      >
+        {current ?? " "}
+      </div>
       {history.length === 0 ? (
         <p className="hint-text">Press a key to capture</p>
       ) : (
