@@ -1,19 +1,41 @@
 .app {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1.5rem;
+}
+
+.app-header {
+  margin-bottom: 1rem;
+}
+
+.app-header h1 {
+  margin: 0;
+}
+
+.app-header p {
+  margin: 0.2rem 0 0;
+  color: #666;
 }
 
 .card {
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  padding: 1.2rem;
+  margin-bottom: 1.2rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
 }
 
+.card h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.1rem;
+}
+
+/* ── Buttons ── */
 .btn {
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 1rem;
   cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.9rem;
 }
 
 .btn:disabled {
@@ -21,20 +43,224 @@
   cursor: not-allowed;
 }
 
-.input-group {
+.btn-primary {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #333;
+  border-color: #d1d5db;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+/* ── Device info ── */
+.device-info {
+  margin-bottom: 0.8rem;
+}
+
+/* ── Streaming controls ── */
+.stream-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.stream-status {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin: 1rem 0;
+  flex: 1;
 }
 
-.response-box {
-  margin-top: 1rem;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
+.stream-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ccc;
+  display: inline-block;
 }
 
-.response-box pre {
+.stream-indicator.active {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+
+.layer-badge {
+  background: #e0e7ff;
+  color: #4338ca;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.error-text {
+  color: #ef4444;
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.hint-text {
+  color: #999;
+  font-size: 0.9rem;
+  margin: 0.4rem 0 0;
+}
+
+.error-message p {
+  color: #ef4444;
   margin: 0;
-  overflow-x: auto;
+}
+
+.warning-message p {
+  color: #d97706;
+  margin: 0;
+}
+
+/* ── Keyboard layout ── */
+.keyboard-layout {
+  position: relative;
+  overflow: auto;
+  padding-bottom: 0.5rem;
+}
+
+.keycap {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #999;
+  border-radius: 4px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  transition:
+    background 0.05s,
+    box-shadow 0.05s;
+  overflow: hidden;
+}
+
+.keycap-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  line-height: 1;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.keycap-pressed {
+  background: #3b82f6;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 8px #3b82f6aa;
+}
+
+.keycap-pressed .keycap-label {
+  color: #fff;
+}
+
+.keycap-ever-pressed {
+  /* subtle indicator handled by the dot */
+}
+
+.keycap-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.keycap-pressed .keycap-dot {
+  background: #fff;
+}
+
+/* ── History panels ── */
+.history-section {
+  margin-top: 0;
+}
+
+.history-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .history-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.history-panel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #555;
+}
+
+.current-key {
+  display: inline-block;
+  background: #fbbf24;
+  color: #000;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.15rem 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.history-item-active {
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.history-pos {
+  color: #999;
+  font-size: 0.75rem;
+  min-width: 2rem;
+}
+
+.history-name {
+  color: #444;
+}
+
+.history-param {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.app-footer {
+  margin-top: 1rem;
+  text-align: center;
+  color: #999;
+  font-size: 0.85rem;
 }

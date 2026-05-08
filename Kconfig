@@ -1,10 +1,10 @@
-config ZMK_TEMPLATE_FEATURE
-    bool "Enable template feature"
+config ZMK_INPUT_STREAM_FEATURE
+    bool "Enable input stream feature"
 
-if ZMK_TEMPLATE_FEATURE
+if ZMK_INPUT_STREAM_FEATURE
 
-config ZMK_TEMPLATE_FEATURE_STUDIO_RPC
-    bool "Enable template feature custom Studio RPC"
+config ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+    bool "Enable input stream custom Studio RPC"
     depends on ZMK_STUDIO
 
 endif
