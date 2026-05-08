@@ -265,9 +265,10 @@ export function InputStreamSection({
   const [isLoading, setIsLoading] = useState(false);
 
   const [streamingEnabled, setStreamingEnabled] = useState(false);
-  const [unlockPending, setUnlockPending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [activeLayer, setActiveLayer] = useState(0);
+  const [unlockPending, setUnlockPending] = useState(false);
+  const [loadTrigger, setLoadTrigger] = useState(0);
 
   const [pressedKeys, setPressedKeys] = useState<Set<number>>(new Set());
   const [everPressedKeys, setEverPressedKeys] = useState<Set<number>>(
@@ -308,7 +309,8 @@ export function InputStreamSection({
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  // Load keymap + behaviors on connect, then auto-start streaming
+  // Load keymap + behaviors on connect, then auto-start streaming.
+  // Retried automatically when unlockPending via loadTrigger.
   useEffect(() => {
     if (!connection) return;
     let cancelled = false;
@@ -342,10 +344,20 @@ export function InputStreamSection({
           const d = r.behaviors?.getBehaviorDetails;
           if (d) bMap.set(d.id, d);
         }
+        setUnlockPending(false);
         setBehaviorMap(bMap);
         if (!cancelled) void enableStreamRef.current();
       } catch (e) {
-        if (!cancelled) setLoadError(friendlyError(e));
+        if (cancelled) return;
+        if (
+          e instanceof MetaError &&
+          e.condition === ErrorConditions.UNLOCK_REQUIRED
+        ) {
+          setUnlockPending(true);
+        } else {
+          setUnlockPending(false);
+          setLoadError(friendlyError(e));
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -354,7 +366,7 @@ export function InputStreamSection({
     return () => {
       cancelled = true;
     };
-  }, [connection]);
+  }, [connection, loadTrigger]);
 
   // Subscribe to notifications from firmware
   useEffect(() => {
@@ -422,7 +434,7 @@ export function InputStreamSection({
     };
   }, []);
 
-  // Enable streaming — sets unlockPending on UNLOCK_REQUIRED instead of erroring
+  // Enable streaming after data loads
   const enableStream = useCallback(async () => {
     if (!connection || !subsystem) return;
     setStreamError(null);
@@ -441,14 +453,7 @@ export function InputStreamSection({
       }
       setStreamingEnabled(true);
     } catch (e) {
-      if (
-        e instanceof MetaError &&
-        e.condition === ErrorConditions.UNLOCK_REQUIRED
-      ) {
-        setUnlockPending(true);
-      } else {
-        setStreamError(friendlyError(e));
-      }
+      setStreamError(friendlyError(e));
     }
   }, [connection, subsystem]);
 
@@ -457,46 +462,16 @@ export function InputStreamSection({
     enableStreamRef.current = enableStream;
   }, [enableStream]);
 
-  // Retry enableStream every 2 s while waiting for unlock
+  // Retry loading every 2 s while Studio is locked
   useEffect(() => {
-    if (!unlockPending || !connection || !subsystem) return;
-    const retry = async () => {
-      try {
-        const service = new ZMKCustomSubsystem(connection, subsystem.index);
-        const payload = Request.encode(
-          Request.create({ enableStream: {} })
-        ).finish();
-        const respPayload = await service.callRPC(payload);
-        if (respPayload) {
-          const resp = Response.decode(respPayload);
-          if (resp.error) return;
-        }
-        setStreamingEnabled(true);
-        setUnlockPending(false);
-      } catch (e) {
-        if (
-          !(
-            e instanceof MetaError &&
-            e.condition === ErrorConditions.UNLOCK_REQUIRED
-          )
-        ) {
-          setUnlockPending(false);
-          setStreamError(friendlyError(e));
-        }
-        // UNLOCK_REQUIRED: keep retrying
-      }
-    };
-    const id = setInterval(() => void retry(), 2000);
+    if (!unlockPending || !connection) return;
+    const id = setInterval(() => setLoadTrigger((t) => t + 1), 2000);
     return () => clearInterval(id);
-  }, [unlockPending, connection, subsystem]);
+  }, [unlockPending, connection]);
 
   // Stream toggle button handler
   const toggleStreaming = useCallback(async () => {
     if (!connection || !subsystem) return;
-    if (unlockPending) {
-      setUnlockPending(false);
-      return;
-    }
     if (streamingEnabled) {
       setStreamError(null);
       try {
@@ -519,7 +494,7 @@ export function InputStreamSection({
     } else {
       await enableStream();
     }
-  }, [connection, subsystem, streamingEnabled, unlockPending, enableStream]);
+  }, [connection, subsystem, streamingEnabled, enableStream]);
 
   if (!zmkApp) return null;
 
@@ -539,14 +514,11 @@ export function InputStreamSection({
         {isLoading && <span className="status-hint">Loading…</span>}
         {subsystem ? (
           <button
-            className={`btn btn-sm ${streamingEnabled ? "btn-danger" : unlockPending ? "btn-secondary" : "btn-primary"}`}
+            className={`btn btn-sm ${streamingEnabled ? "btn-danger" : "btn-primary"}`}
             onClick={toggleStreaming}
+            disabled={unlockPending}
           >
-            {streamingEnabled
-              ? "Disable Stream"
-              : unlockPending
-                ? "Cancel"
-                : "Enable Stream"}
+            {streamingEnabled ? "Disable Stream" : "Enable Stream"}
           </button>
         ) : (
           <span
@@ -569,12 +541,17 @@ export function InputStreamSection({
       {unlockPending && (
         <div className="info-bar">
           <span>
-            Studio is locked — press &amp;studio_unlock key to start streaming
-            (retrying…)
+            Studio is locked — press &amp;studio_unlock key to load keyboard
+            data (retrying…)
           </span>
           <button
             className="info-bar-dismiss"
-            onClick={() => setUnlockPending(false)}
+            onClick={() => {
+              setUnlockPending(false);
+              setLoadError(
+                "Studio is locked — press &studio_unlock then reconnect"
+              );
+            }}
           >
             ×
           </button>

@@ -6,6 +6,7 @@ import {
 } from "@cormoran/zmk-studio-react-hook/testing";
 import { ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
 import { InputStreamSection, SUBSYSTEM_IDENTIFIER } from "../src/App";
+import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
 import { ErrorConditions } from "@zmkfirmware/zmk-studio-ts-client/meta";
 
 jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
@@ -19,6 +20,8 @@ jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
     }
   },
 }));
+
+const mockCallRpc = call_rpc as jest.Mock;
 
 function makeUnlockError() {
   const { MetaError } = jest.requireMock(
@@ -44,13 +47,16 @@ function renderWithApp(subsystems: string[] = [SUBSYSTEM_IDENTIFIER]) {
 let callRPCSpy: jest.SpyInstance;
 
 beforeEach(() => {
-  // Default: stream enable/disable RPCs succeed
+  // call_rpc: used by data loading (keymap/behaviors)
+  mockCallRpc.mockResolvedValue({});
+  // ZMKCustomSubsystem.callRPC: used by stream enable/disable
   callRPCSpy = jest
     .spyOn(ZMKCustomSubsystem.prototype, "callRPC")
     .mockResolvedValue(null);
 });
 
 afterEach(() => {
+  mockCallRpc.mockReset();
   callRPCSpy.mockRestore();
 });
 
@@ -60,7 +66,7 @@ describe("InputStreamSection Component", () => {
       renderWithApp();
       expect(screen.getByText("Test Device")).toBeInTheDocument();
       expect(
-        screen.queryByText(/Enable Stream|Disable Stream|Cancel/i)
+        screen.queryByText(/Enable Stream|Disable Stream/i)
       ).toBeInTheDocument();
     });
 
@@ -71,22 +77,26 @@ describe("InputStreamSection Component", () => {
       );
     });
 
-    it("shows unlock-pending info bar when UNLOCK_REQUIRED on auto-start", async () => {
-      callRPCSpy.mockRejectedValue(makeUnlockError());
+    it("shows unlock-pending info bar when UNLOCK_REQUIRED during load", async () => {
+      // Loading fails with UNLOCK_REQUIRED
+      mockCallRpc.mockRejectedValue(makeUnlockError());
       renderWithApp();
 
       await waitFor(() =>
         expect(screen.getByText(/Studio is locked/i)).toBeInTheDocument()
       );
-      expect(screen.getByText(/Cancel/i)).toBeInTheDocument();
+      // Stream button should be disabled while loading retries
+      expect(
+        screen.getByText(/Enable Stream/i).closest("button")
+      ).toBeDisabled();
     });
 
-    it("dismissing unlock info bar shows Enable Stream and stops retry", async () => {
-      callRPCSpy.mockRejectedValue(makeUnlockError());
+    it("dismissing unlock info bar stops retry and shows load error", async () => {
+      mockCallRpc.mockRejectedValue(makeUnlockError());
       renderWithApp();
 
       await waitFor(() =>
-        expect(screen.getByText(/Studio is locked/i)).toBeInTheDocument()
+        expect(document.querySelector(".info-bar")).toBeInTheDocument()
       );
 
       await act(async () => {
@@ -96,8 +106,9 @@ describe("InputStreamSection Component", () => {
         await userEvent.click(dismissBtn);
       });
 
-      expect(screen.queryByText(/Studio is locked/i)).not.toBeInTheDocument();
-      expect(screen.getByText(/Enable Stream/i)).toBeInTheDocument();
+      expect(document.querySelector(".info-bar")).not.toBeInTheDocument();
+      // Load error should appear after dismiss
+      expect(document.querySelector(".error-bar")).toBeInTheDocument();
     });
   });
 
