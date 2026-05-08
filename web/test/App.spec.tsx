@@ -65,7 +65,7 @@ describe("App Component", () => {
 
       // Stream button and disconnect in status bar
       expect(
-        screen.getByText(/^Stream$/i, { selector: "button" })
+        screen.getByText(/Enable Stream/i, { selector: "button" })
       ).toBeInTheDocument();
       expect(screen.getByTitle(/Disconnect/i)).toBeInTheDocument();
     });

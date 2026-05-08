@@ -2,7 +2,8 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import "./App.css";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
 import { connect as gatt_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/gatt";
-import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
+import { call_rpc, MetaError } from "@zmkfirmware/zmk-studio-ts-client";
+import { ErrorConditions } from "@zmkfirmware/zmk-studio-ts-client/meta";
 import type {
   Keymap,
   PhysicalLayouts,
@@ -153,6 +154,17 @@ function getEffectiveBinding(
   return null;
 }
 
+// ─── Error helpers ────────────────────────────────────────────────────────
+function friendlyError(e: unknown): string {
+  if (
+    e instanceof MetaError &&
+    e.condition === ErrorConditions.UNLOCK_REQUIRED
+  ) {
+    return "Studio is locked — bind &studio_unlock to a key to enable streaming";
+  }
+  return e instanceof Error ? e.message : "Unknown error";
+}
+
 // ─── Audio ────────────────────────────────────────────────────────────────
 let audioCtx: AudioContext | null = null;
 
@@ -300,10 +312,7 @@ export function InputStreamSection({
         }
         setBehaviorMap(bMap);
       } catch (e) {
-        if (!cancelled)
-          setLoadError(
-            e instanceof Error ? e.message : "Failed to load layout"
-          );
+        if (!cancelled) setLoadError(friendlyError(e));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -400,7 +409,7 @@ export function InputStreamSection({
       }
       setStreamingEnabled((v) => !v);
     } catch (e) {
-      setStreamError(e instanceof Error ? e.message : "RPC failed");
+      setStreamError(friendlyError(e));
     }
   }, [connection, subsystem, streamingEnabled]);
 
@@ -419,12 +428,13 @@ export function InputStreamSection({
         />
         <span className="status-device">{deviceName}</span>
         <span className="layer-badge">Layer {activeLayer}</span>
+        {isLoading && <span className="status-hint">Loading…</span>}
         {subsystem ? (
           <button
             className={`btn btn-sm ${streamingEnabled ? "btn-danger" : "btn-primary"}`}
             onClick={toggleStreaming}
           >
-            {streamingEnabled ? "Stop" : "Stream"}
+            {streamingEnabled ? "Disable Stream" : "Enable Stream"}
           </button>
         ) : (
           <span
@@ -434,12 +444,6 @@ export function InputStreamSection({
             No subsystem
           </span>
         )}
-        {(streamError || loadError) && (
-          <span className="status-error" title={streamError ?? loadError ?? ""}>
-            ⚠
-          </span>
-        )}
-        {isLoading && <span className="status-hint">Loading…</span>}
         <button
           className="btn btn-sm btn-ghost"
           onClick={disconnect}
@@ -448,6 +452,22 @@ export function InputStreamSection({
           ×
         </button>
       </div>
+
+      {/* ── Error display ── */}
+      {(streamError || loadError) && (
+        <div className="error-bar">
+          <span>⚠ {streamError ?? loadError}</span>
+          <button
+            className="error-bar-dismiss"
+            onClick={() => {
+              setStreamError(null);
+              setLoadError(null);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Keyboard layout ── */}
       {layout && keymap && (

@@ -26,7 +26,7 @@ describe("InputStreamSection Component", () => {
         </ZMKAppProvider>
       );
 
-      expect(screen.getByText(/Stream/i)).toBeInTheDocument();
+      expect(screen.getByText(/Enable Stream/i)).toBeInTheDocument();
       expect(screen.getByText("Test Device")).toBeInTheDocument();
     });
   });
