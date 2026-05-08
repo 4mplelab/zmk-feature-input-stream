@@ -1,10 +1,22 @@
-config ZMK_TEMPLATE_FEATURE
-    bool "Enable template feature"
+config ZMK_INPUT_STREAM_FEATURE
+    bool "Enable input stream feature"
 
-if ZMK_TEMPLATE_FEATURE
+if ZMK_INPUT_STREAM_FEATURE
 
-config ZMK_TEMPLATE_FEATURE_STUDIO_RPC
-    bool "Enable template feature custom Studio RPC"
+config ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+    bool "Enable input stream custom Studio RPC"
     depends on ZMK_STUDIO
+    select ZMK_LOW_PRIORITY_WORK_QUEUE
 
-endif
+if ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+
+config ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE
+    int "Max queued notifications"
+    default 8
+    help
+      Maximum number of key/layer notifications buffered between the event
+      handler and the low-priority sender. Excess notifications are dropped.
+
+endif # ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+
+endif # ZMK_INPUT_STREAM_FEATURE

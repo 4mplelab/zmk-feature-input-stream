@@ -3,35 +3,30 @@ import userEvent from "@testing-library/user-event";
 import { setupZMKMocks } from "@cormoran/zmk-studio-react-hook/testing";
 import App from "../src/App";
 
-// Mock the ZMK client
 jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
   create_rpc_connection: jest.fn(),
-  call_rpc: jest.fn(),
+  call_rpc: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock("@zmkfirmware/zmk-studio-ts-client/transport/serial", () => ({
   connect: jest.fn(),
 }));
 
+jest.mock("@zmkfirmware/zmk-studio-ts-client/transport/gatt", () => ({
+  connect: jest.fn(),
+}));
+
 describe("App Component", () => {
   describe("Basic Rendering", () => {
-    it("should render the application header", () => {
+    it("should render the app title and connect buttons when disconnected", () => {
       render(<App />);
-
-      expect(screen.getByText(/ZMK Module Template/i)).toBeInTheDocument();
-      expect(screen.getByText(/Custom Studio RPC Demo/i)).toBeInTheDocument();
-    });
-
-    it("should render connection button when disconnected", () => {
-      render(<App />);
-
-      expect(screen.getByText(/Connect Serial/i)).toBeInTheDocument();
-    });
-
-    it("should render footer", () => {
-      render(<App />);
-
-      expect(screen.getByText(/Template Module/i)).toBeInTheDocument();
+      // Status bar shows the title
+      expect(
+        screen.getByText(/ZMK Input Stream/i, { selector: ".app-title" })
+      ).toBeInTheDocument();
+      // Both connection buttons present
+      expect(screen.getByText(/^Serial$/i)).toBeInTheDocument();
+      expect(screen.getByText(/^BLE$/i)).toBeInTheDocument();
     });
   });
 
@@ -42,10 +37,10 @@ describe("App Component", () => {
       mocks = setupZMKMocks();
     });
 
-    it("should connect to device when connect button is clicked", async () => {
+    it("should show connected state after clicking Serial", async () => {
       mocks.mockSuccessfulConnection({
         deviceName: "Test Keyboard",
-        subsystems: ["zmk__template"],
+        subsystems: ["zmk__input_stream"],
       });
 
       const { connect: serial_connect } =
@@ -54,20 +49,25 @@ describe("App Component", () => {
 
       render(<App />);
 
-      expect(screen.getByText(/Connect Serial/i)).toBeInTheDocument();
-
       const user = userEvent.setup();
-      const connectButton = screen.getByText(/Connect Serial/i);
-      await user.click(connectButton);
+      await user.click(screen.getByText(/^Serial$/i));
 
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Connected to: Test Keyboard/i)
-        ).toBeInTheDocument();
-      });
+      await waitFor(
+        () => {
+          const found = screen.getAllByText(
+            (_, el) =>
+              el?.textContent?.toLowerCase().includes("test keyboard") ?? false
+          );
+          expect(found.length).toBeGreaterThan(0);
+        },
+        { timeout: 3000 }
+      );
 
-      expect(screen.getByText(/Disconnect/i)).toBeInTheDocument();
-      expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
+      // Stream button and disconnect in status bar
+      expect(
+        screen.getByText(/Enable Stream/i, { selector: "button" })
+      ).toBeInTheDocument();
+      expect(screen.getByTitle(/Disconnect/i)).toBeInTheDocument();
     });
   });
 });
