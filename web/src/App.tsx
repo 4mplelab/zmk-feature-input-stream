@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
 import { connect as gatt_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/gatt";
@@ -265,6 +265,7 @@ export function InputStreamSection({
   const [isLoading, setIsLoading] = useState(false);
 
   const [streamingEnabled, setStreamingEnabled] = useState(false);
+  const [unlockPending, setUnlockPending] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [activeLayer, setActiveLayer] = useState(0);
 
@@ -276,7 +277,38 @@ export function InputStreamSection({
   const [jsKeycodes, setJsKeycodes] = useState<string[]>([]);
   const [currentJsKey, setCurrentJsKey] = useState<string | null>(null);
 
-  // Load keymap + behaviors on connect
+  // Refs to hold latest values for event handlers and effects without re-subscribing
+  const streamingEnabledRef = useRef(false);
+  const connectionRef = useRef(connection);
+  const subsystemRef = useRef(subsystem);
+  const enableStreamRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  useEffect(() => {
+    streamingEnabledRef.current = streamingEnabled;
+  }, [streamingEnabled]);
+  useEffect(() => {
+    connectionRef.current = connection;
+  }, [connection]);
+  useEffect(() => {
+    subsystemRef.current = subsystem;
+  }, [subsystem]);
+
+  // Send disableStream on page close (best-effort)
+  useEffect(() => {
+    const handler = () => {
+      const conn = connectionRef.current;
+      const sys = subsystemRef.current;
+      if (!streamingEnabledRef.current || !conn || !sys) return;
+      const service = new ZMKCustomSubsystem(conn, sys.index);
+      const payload = Request.encode(
+        Request.create({ disableStream: {} })
+      ).finish();
+      void service.callRPC(payload);
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
+  // Load keymap + behaviors on connect, then auto-start streaming
   useEffect(() => {
     if (!connection) return;
     let cancelled = false;
@@ -311,6 +343,7 @@ export function InputStreamSection({
           if (d) bMap.set(d.id, d);
         }
         setBehaviorMap(bMap);
+        if (!cancelled) void enableStreamRef.current();
       } catch (e) {
         if (!cancelled) setLoadError(friendlyError(e));
       } finally {
@@ -389,16 +422,15 @@ export function InputStreamSection({
     };
   }, []);
 
-  // Stream toggle
-  const toggleStreaming = useCallback(async () => {
+  // Enable streaming — sets unlockPending on UNLOCK_REQUIRED instead of erroring
+  const enableStream = useCallback(async () => {
     if (!connection || !subsystem) return;
     setStreamError(null);
     try {
       const service = new ZMKCustomSubsystem(connection, subsystem.index);
-      const req = streamingEnabled
-        ? Request.create({ disableStream: {} })
-        : Request.create({ enableStream: {} });
-      const payload = Request.encode(req).finish();
+      const payload = Request.encode(
+        Request.create({ enableStream: {} })
+      ).finish();
       const respPayload = await service.callRPC(payload);
       if (respPayload) {
         const resp = Response.decode(respPayload);
@@ -407,11 +439,87 @@ export function InputStreamSection({
           return;
         }
       }
-      setStreamingEnabled((v) => !v);
+      setStreamingEnabled(true);
     } catch (e) {
-      setStreamError(friendlyError(e));
+      if (
+        e instanceof MetaError &&
+        e.condition === ErrorConditions.UNLOCK_REQUIRED
+      ) {
+        setUnlockPending(true);
+      } else {
+        setStreamError(friendlyError(e));
+      }
     }
-  }, [connection, subsystem, streamingEnabled]);
+  }, [connection, subsystem]);
+
+  // Keep ref in sync so the load effect can call the latest enableStream
+  useEffect(() => {
+    enableStreamRef.current = enableStream;
+  }, [enableStream]);
+
+  // Retry enableStream every 2 s while waiting for unlock
+  useEffect(() => {
+    if (!unlockPending || !connection || !subsystem) return;
+    const retry = async () => {
+      try {
+        const service = new ZMKCustomSubsystem(connection, subsystem.index);
+        const payload = Request.encode(
+          Request.create({ enableStream: {} })
+        ).finish();
+        const respPayload = await service.callRPC(payload);
+        if (respPayload) {
+          const resp = Response.decode(respPayload);
+          if (resp.error) return;
+        }
+        setStreamingEnabled(true);
+        setUnlockPending(false);
+      } catch (e) {
+        if (
+          !(
+            e instanceof MetaError &&
+            e.condition === ErrorConditions.UNLOCK_REQUIRED
+          )
+        ) {
+          setUnlockPending(false);
+          setStreamError(friendlyError(e));
+        }
+        // UNLOCK_REQUIRED: keep retrying
+      }
+    };
+    const id = setInterval(() => void retry(), 2000);
+    return () => clearInterval(id);
+  }, [unlockPending, connection, subsystem]);
+
+  // Stream toggle button handler
+  const toggleStreaming = useCallback(async () => {
+    if (!connection || !subsystem) return;
+    if (unlockPending) {
+      setUnlockPending(false);
+      return;
+    }
+    if (streamingEnabled) {
+      setStreamError(null);
+      try {
+        const service = new ZMKCustomSubsystem(connection, subsystem.index);
+        const payload = Request.encode(
+          Request.create({ disableStream: {} })
+        ).finish();
+        const respPayload = await service.callRPC(payload);
+        if (respPayload) {
+          const resp = Response.decode(respPayload);
+          if (resp.error) {
+            setStreamError(resp.error.message);
+            return;
+          }
+        }
+        setStreamingEnabled(false);
+      } catch (e) {
+        setStreamError(friendlyError(e));
+      }
+    } else {
+      await enableStream();
+    }
+  }, [connection, subsystem, streamingEnabled, unlockPending, enableStream]);
 
   if (!zmkApp) return null;
 
@@ -431,10 +539,14 @@ export function InputStreamSection({
         {isLoading && <span className="status-hint">Loading…</span>}
         {subsystem ? (
           <button
-            className={`btn btn-sm ${streamingEnabled ? "btn-danger" : "btn-primary"}`}
+            className={`btn btn-sm ${streamingEnabled ? "btn-danger" : unlockPending ? "btn-secondary" : "btn-primary"}`}
             onClick={toggleStreaming}
           >
-            {streamingEnabled ? "Disable Stream" : "Enable Stream"}
+            {streamingEnabled
+              ? "Disable Stream"
+              : unlockPending
+                ? "Cancel"
+                : "Enable Stream"}
           </button>
         ) : (
           <span
@@ -452,6 +564,22 @@ export function InputStreamSection({
           ×
         </button>
       </div>
+
+      {/* ── Unlock pending info ── */}
+      {unlockPending && (
+        <div className="info-bar">
+          <span>
+            Studio is locked — press &amp;studio_unlock key to start streaming
+            (retrying…)
+          </span>
+          <button
+            className="info-bar-dismiss"
+            onClick={() => setUnlockPending(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Error display ── */}
       {(streamError || loadError) && (
