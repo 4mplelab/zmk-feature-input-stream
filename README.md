@@ -26,8 +26,8 @@ manifest:
       url-base: https://github.com/cormoran
   projects:
     - name: zmk
-      remote: zmkfirmware
-      revision: main
+      remote: cormoran
+      revision: main+custom-studio-protocol
       import: app/west.yml
     - name: zmk-feature-input-stream
       remote: cormoran
