@@ -1,1 +1,11 @@
-zmk.input_stream.ErrorResponse.message   max_size:64
+zmk.input_stream.ErrorResponse.message max_size:96
+zmk.input_stream.Capabilities.noise_protocol max_size:48
+zmk.input_stream.RegisterRequest.public_key max_size:32
+zmk.input_stream.RevokeRequest.public_key max_size:32
+zmk.input_stream.Registration.device_public_key max_size:32
+zmk.input_stream.Request.handshake max_size:128
+zmk.input_stream.HandshakeResponse.payload max_size:96
+zmk.input_stream.SecurePacket.payload max_size:224
+zmk.input_stream.State.active_layer_ids max_count:32
+zmk.input_stream.State.layer_order max_count:32
+zmk.input_stream.State.pressed max_size:64

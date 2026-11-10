@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import platform
+import os
 import shutil
 import subprocess
 import unittest
@@ -38,7 +41,9 @@ class WestCommandsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.WEST_TOPDIR = Path(run_west(["topdir"]).stdout.strip())
-        cls.BUILD_DIR = cls.WEST_TOPDIR / "build"
+        cls.BUILD_DIR = Path(
+            os.environ.get("ZMK_TEST_BUILD_DIR", cls.WEST_TOPDIR / "build")
+        )
 
     @unittest.skipUnless(
         platform.system() == "Linux", "zmk-test is only supported on Linux"
@@ -51,7 +56,11 @@ class WestCommandsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("PASS: test", result.stdout, result.stdout + result.stderr)
         self.assertIn("PASS: studio", result.stdout, result.stdout + result.stderr)
+        self.assertIn("PASS: v2", result.stdout, result.stdout + result.stderr)
+        self.assertIn("PASS: secure", result.stdout, result.stdout + result.stderr)
         self.assertNotIn("FAILED: ", result.stdout, result.stdout + result.stderr)
+        secure_config = (test_build_dir / "tests/secure/zephyr/.config").read_text()
+        self.assertIn("CONFIG_ZMK_INPUT_STREAM_SECURE=y", secure_config)
 
     def test_zmk_build(self):
         self._test_zmk_build(
@@ -73,7 +82,14 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_ZMK_INPUT_STREAM_FEATURE=y",
                         "CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC=y",
                         "CONFIG_ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE=8",
-                        "CONFIG_ZMK_LOW_PRIORITY_WORK_QUEUE=y",
+                        "CONFIG_ZMK_INPUT_STREAM_THREAD_STACK_SIZE=4096",
+                    ],
+                    device=[],
+                ),
+                "module_input_stream_board_secure_rpc": ConfigAndDeviceTree(
+                    config=[
+                        "CONFIG_ZMK_INPUT_STREAM_SECURE=y",
+                        "CONFIG_ZMK_INPUT_STREAM_MAX_CLIENTS=4",
                     ],
                     device=[],
                 ),
@@ -95,7 +111,9 @@ class WestCommandsTests(unittest.TestCase):
         for artifact in artifacts_and_expected_build_params.keys():
             shutil.rmtree(self.BUILD_DIR / artifact, ignore_errors=True)
 
-        result = run_west(["zmk-build", "tests/zmk-config", "-q"])
+        result = run_west(
+            ["zmk-build", "tests/zmk-config", "-q", "-d", str(self.BUILD_DIR)]
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         for artifact, entries in artifacts_and_expected_build_params.items():
