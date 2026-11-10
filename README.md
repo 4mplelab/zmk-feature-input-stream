@@ -144,13 +144,14 @@ feature settings. On the central/host-facing device, add:
 CONFIG_ZMK_INPUT_STREAM_FEATURE=y
 CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC=y
 CONFIG_ZMK_INPUT_STREAM_SECURE=y
+CONFIG_ZMK_STUDIO_LOCKING=y
 CONFIG_ZMK_INPUT_STREAM_MAX_CLIENTS=4
 CONFIG_ZMK_STUDIO_RPC_CUSTOM_SUBSYSTEM_REQUEST_PAYLOAD_MAX_BYTES=256
 CONFIG_ZMK_STUDIO_RPC_THREAD_STACK_SIZE=6000
 ```
 
-Persistent Zephyr settings storage and a cryptographically secure entropy
-source are required. `SETTINGS_NONE` is rejected. Changing security mode is
+Studio locking, persistent Zephyr settings storage and a cryptographically
+secure entropy source are required. `SETTINGS_NONE` is rejected. Changing security mode is
 a build-time setting: rebuild and flash the firmware. The security code is
 not linked into a disabled build. The normal Bluetooth pairing/encryption
 and Studio's editing lock remain in effect.

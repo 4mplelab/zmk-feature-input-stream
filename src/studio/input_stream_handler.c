@@ -25,6 +25,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
 #include <zmk/input_stream/secure.h>
+BUILD_ASSERT(IS_ENABLED(CONFIG_ZMK_STUDIO_LOCKING),
+             "Secure input-stream requires Studio locking for physical enrollment");
 BUILD_ASSERT(!IS_ENABLED(CONFIG_SETTINGS_NONE), "Secure input-stream requires persistent settings");
 BUILD_ASSERT(CONFIG_ZMK_STUDIO_RPC_THREAD_STACK_SIZE >= 6000,
              "Secure input-stream requires Studio RPC stack >= 6000");

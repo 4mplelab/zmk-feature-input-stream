@@ -89,6 +89,7 @@ class WestCommandsTests(unittest.TestCase):
                 "module_input_stream_board_secure_rpc": ConfigAndDeviceTree(
                     config=[
                         "CONFIG_ZMK_INPUT_STREAM_SECURE=y",
+                        "CONFIG_ZMK_STUDIO_LOCKING=y",
                         "CONFIG_ZMK_INPUT_STREAM_MAX_CLIENTS=4",
                     ],
                     device=[],
