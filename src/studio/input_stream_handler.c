@@ -37,6 +37,9 @@ BUILD_ASSERT(CONFIG_ZMK_STUDIO_RPC_CUSTOM_SUBSYSTEM_REQUEST_PAYLOAD_MAX_BYTES >=
 #define KEYS 1
 #define LAYERS 2
 static atomic_t subscriptions, modern, epoch, sequence, resync;
+#if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
+static atomic_t reset_generation;
+#endif
 static uint8_t pressed[64];
 static struct k_spinlock pressed_lock;
 static struct k_work_q stream_queue;
@@ -63,12 +66,15 @@ static void clear_stream(void) {
 }
 static void reset_work_handler(struct k_work *work) {
 #if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
-    stream_secure_reset();
+    stream_secure_reset_if_generation(atomic_get(&reset_generation));
 #endif
 }
 K_WORK_DEFINE(reset_work, reset_work_handler);
 static void lost_connection(void) {
     clear_stream();
+#if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
+    atomic_set(&reset_generation, stream_secure_generation());
+#endif
     k_work_submit_to_queue(&stream_queue, &reset_work);
 }
 #if IS_ENABLED(CONFIG_ZMK_BLE)
@@ -204,10 +210,14 @@ static void process_request(const zmk_input_stream_Request *req, zmk_input_strea
     if (!authenticated) {
         if (req->which_request_type == zmk_input_stream_Request_handshake_tag) {
             resp->which_response_type = zmk_input_stream_Response_handshake_tag;
+            uint32_t before = atomic_get(&epoch);
             if (stream_handshake(req->request_type.handshake.bytes,
                                  req->request_type.handshake.size, &resp->response_type.handshake))
                 error_response(resp, "Authentication failed");
-            else
+            else if ((uint32_t)atomic_get(&epoch) != before) {
+                stream_secure_reset();
+                error_response(resp, "Connection changed during authentication");
+            } else
                 clear_stream();
             return;
         }

@@ -61,6 +61,7 @@ class WestCommandsTests(unittest.TestCase):
         self.assertNotIn("FAILED: ", result.stdout, result.stdout + result.stderr)
         secure_config = (test_build_dir / "tests/secure/zephyr/.config").read_text()
         self.assertIn("CONFIG_ZMK_INPUT_STREAM_SECURE=y", secure_config)
+        self.assertIn("CONFIG_ZMK_STUDIO_LOCKING=y", secure_config)
 
     def test_zmk_build(self):
         self._test_zmk_build(

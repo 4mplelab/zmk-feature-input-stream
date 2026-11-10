@@ -19,9 +19,11 @@ static struct registration stored;
 static bool loaded;
 static NoiseCipherState *tx, *rx;
 static uint32_t session_id, tx_counter, rx_counter;
+static atomic_t generation;
 K_MUTEX_DEFINE(crypto_mutex);
 
 static void reset_locked(void) {
+    atomic_inc(&generation);
     if (tx)
         noise_cipherstate_free(tx);
     if (rx)
@@ -32,6 +34,13 @@ static void reset_locked(void) {
 void stream_secure_reset(void) {
     k_mutex_lock(&crypto_mutex, K_FOREVER);
     reset_locked();
+    k_mutex_unlock(&crypto_mutex);
+}
+uint32_t stream_secure_generation(void) { return atomic_get(&generation); }
+void stream_secure_reset_if_generation(uint32_t expected) {
+    k_mutex_lock(&crypto_mutex, K_FOREVER);
+    if ((uint32_t)atomic_get(&generation) == expected)
+        reset_locked();
     k_mutex_unlock(&crypto_mutex);
 }
 static int load_record(const char *key, size_t len, settings_read_cb read, void *arg) {

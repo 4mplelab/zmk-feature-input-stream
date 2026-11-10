@@ -63,6 +63,7 @@ static int stream_selftest(void) {
     response = test_call(&req);
     assert(response.which_response_type == zmk_input_stream_Response_error_tag);
     noise_handshakestate_free(unknown);
+    uint32_t old_generation = stream_secure_generation();
     NoiseHandshakeState *hs;
     assert(!noise_handshakestate_new_by_name(&hs, INPUT_STREAM_NOISE, NOISE_ROLE_INITIATOR));
     assert(!noise_dhstate_set_keypair_private(noise_handshakestate_get_local_keypair_dh(hs),
@@ -87,6 +88,8 @@ static int stream_selftest(void) {
     noise_buffer_set_output(received, sid, sizeof(sid));
     assert(!noise_handshakestate_read_message(hs, &message, &received));
     assert(received.size == 4);
+    /* Delayed cleanup for the previous link must not erase this new session. */
+    stream_secure_reset_if_generation(old_generation);
     NoiseCipherState *send, *receive;
     assert(!noise_handshakestate_split(hs, &send, &receive));
     noise_handshakestate_free(hs);
