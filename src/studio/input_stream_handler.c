@@ -71,9 +71,13 @@ static void reset_work_handler(struct k_work *work) {
 }
 K_WORK_DEFINE(reset_work, reset_work_handler);
 static void lost_connection(void) {
+#if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
+    /* Capture before invalidating the stream so a new handshake cannot be targeted. */
+    uint32_t generation = stream_secure_generation();
+#endif
     clear_stream();
 #if IS_ENABLED(CONFIG_ZMK_INPUT_STREAM_SECURE)
-    atomic_set(&reset_generation, stream_secure_generation());
+    atomic_set(&reset_generation, generation);
 #endif
     k_work_submit_to_queue(&stream_queue, &reset_work);
 }
