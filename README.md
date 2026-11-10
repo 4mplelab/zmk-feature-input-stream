@@ -93,3 +93,110 @@ cd web && npm test
 
 If device is disconnected from web UI before stopping stream, zmk zmk_workqueue_lowprio_work_q becomes in stuck to wait finishing sending streaming data.
 Timeout improvement in zmk is required for improvement.
+
+## Fork extensions: input-stream v2
+
+This fork retains the original subsystem identifier and v1 field numbers.
+With `CONFIG_ZMK_INPUT_STREAM_SECURE=n` (the default), the existing web UI
+and `enable_stream` / `disable_stream` continue to require Studio unlock.
+No ZMK keymap-editing permissions are changed.
+
+New clients can discover protocol version/capabilities, subscribe separately
+to physical keys and layers, and obtain an authoritative state containing
+pressed keys, all currently active layers, the implicit default layer and
+layer priority order. State is returned when subscribing and can be fetched
+again after a gap. Notifications carry an epoch and sequence number. A full
+state is sent after queue overflow, avoiding a permanently highlighted key
+when a release was dropped. Disabled key subscriptions do not send pressed
+key state in layer snapshots.
+
+Notifications use a dedicated low-priority worker. Disconnecting the active
+BLE host, disconnecting USB, or changing the selected output clears the
+subscription and pending notifications. Disconnecting a split peripheral
+alone does not stop the host's stream. A transport operation already in
+progress still depends on the ZMK transport implementation; this module
+cannot guarantee recovery from every lower-level USB/BLE transport stall.
+
+### Optional authenticated, encrypted display channel
+
+The v2 security integration is experimental. It uses the standard
+`Noise_IK_25519_ChaChaPoly_SHA256` protocol, implemented by a pinned subset of
+[Noise-C](https://github.com/rweather/noise-c). It has not received an
+independent security audit. It does not implement a new cryptographic primitive.
+
+Use this fork in your `config/west.yml` (pin a reviewed commit for a release):
+
+```yaml
+manifest:
+  remotes:
+    - name: 4mplelab
+      url-base: https://github.com/4mplelab
+  projects:
+    - name: zmk-feature-input-stream
+      remote: 4mplelab
+      revision: feature/secure-stream-v2
+```
+
+Retain the other required ZMK/custom-Studio projects and the existing module
+feature settings. On the central/host-facing device, add:
+
+```conf
+CONFIG_ZMK_INPUT_STREAM_FEATURE=y
+CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC=y
+CONFIG_ZMK_INPUT_STREAM_SECURE=y
+CONFIG_ZMK_INPUT_STREAM_MAX_CLIENTS=4
+CONFIG_ZMK_STUDIO_RPC_CUSTOM_SUBSYSTEM_REQUEST_PAYLOAD_MAX_BYTES=256
+CONFIG_ZMK_STUDIO_RPC_THREAD_STACK_SIZE=6000
+```
+
+Persistent Zephyr settings storage and a cryptographically secure entropy
+source are required. `SETTINGS_NONE` is rejected. Changing security mode is
+a build-time setting: rebuild and flash the firmware. The security code is
+not linked into a disabled build. The normal Bluetooth pairing/encryption
+and Studio's editing lock remain in effect.
+
+In a compatible native client, such as Keymap Viewer:
+
+1. Connect on a trusted computer, physically unlock Studio, and explicitly
+   choose **register for input notifications**. Registering the client public
+   key and returning the keyboard public key are allowed only while unlocked.
+2. The computer stores its private key in its OS credential store; the
+   keyboard stores its private key and authorized client public keys in settings.
+3. Later connections automatically authenticate and derive fresh session keys.
+   Encrypted display commands and notifications work while Studio is locked.
+   The keymap-editing lock is not unlocked by this authentication.
+4. To remove one client or all notification registrations, physically unlock
+   Studio and use the compatible client's registration controls. This does
+   not reset the keymap or Bluetooth bonds.
+
+There is no plaintext input-stream fallback in a secure build. The original
+web example has no native credential store or v2 Noise adapter and is for the
+default, non-secure mode. Do not enable secure mode and expect the old example
+to display input. An old client can still use its other Studio features.
+
+### Security and performance notes
+
+- Physical key positions and keymaps can reveal typed content. In non-secure
+  mode, Studio unlock permits starting notifications; relocking does not stop
+  an already enabled stream. This is not per-application authentication.
+- Secure mode authorizes holders of registered keys. Enrollment must be done
+  on a trusted computer. It is not executable attestation and cannot protect
+  against compromise of the authorized application, its OS, or extracted keys.
+- The added encryption protects this display channel. It does not encrypt
+  other Studio extensions or replace the keyboard's normal HID/OS protections.
+- Authentication/key exchange happens on connection, not on every key. Each
+  notification still requires symmetric authenticated encryption and an
+  authentication tag, increasing CPU work, traffic, memory use and energy use.
+- Encryption runs on the notification worker, outside the physical input
+  event handler. CPU and radio resources are shared, so zero impact on typing,
+  highlighting latency or battery life is not guaranteed. Hardware crypto
+  acceleration is not assumed by this portable Noise-C backend.
+- Firmware builds, published Noise test vectors and native-simulator tests
+  are checked. End-to-end latency, peak RAM and battery impact on actual LisM /
+  LisM Pro hardware have not yet been measured. Compile-time RAM reports do
+  not include every transient allocation or stack high-water mark.
+
+See [the v2 wire protocol](docs/protocol-v2.md) for client integration. Keymap
+Viewer's highlight toggle uses independent key subscriptions with this fork;
+with non-secure firmware relocked, it falls back to application-side filtering
+until unlock, preserving the original Studio lock condition.

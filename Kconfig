@@ -6,7 +6,6 @@ if ZMK_INPUT_STREAM_FEATURE
 config ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
     bool "Enable input stream custom Studio RPC"
     depends on ZMK_STUDIO
-    select ZMK_LOW_PRIORITY_WORK_QUEUE
 
 if ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
 
@@ -20,3 +19,34 @@ config ZMK_INPUT_STREAM_NOTIF_QUEUE_SIZE
 endif # ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
 
 endif # ZMK_INPUT_STREAM_FEATURE
+
+if ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+config ZMK_INPUT_STREAM_SECURE
+    bool "Require registered clients and encrypted input-stream sessions"
+    default n
+    depends on SETTINGS && ENTROPY_GENERATOR
+    select CSPRNG_ENABLED
+    help
+      Protect input-stream using Noise IK and per-client public keys.
+      Initial registration/revocation requires physical Studio unlock.
+      Registered clients reconnect while Studio is locked. No plaintext fallback.
+      Disabled builds retain the legacy Studio-unlock behavior.
+
+config ZMK_INPUT_STREAM_MAX_CLIENTS
+    int "Maximum registered display clients"
+    default 4
+    range 1 8
+    depends on ZMK_INPUT_STREAM_SECURE
+endif
+
+if ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC
+config ZMK_INPUT_STREAM_THREAD_STACK_SIZE
+    int "Dedicated notification thread stack"
+    default 4096
+    range 2048 8192
+endif
+
+config ZMK_INPUT_STREAM_TEST
+    bool "Run input-stream startup self-tests"
+    depends on ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC && BOARD_NATIVE_SIM
+    default n

@@ -1,31 +1,72 @@
 syntax = "proto3";
-
 package zmk.input_stream;
 
 message EnableStreamRequest {}
-
 message DisableStreamRequest {}
-
+message SubscribeRequest {
+    bool keys = 1;
+    bool layers = 2;
+}
+message RegisterRequest { bytes public_key = 1; }
+message RevokeRequest {
+    bytes public_key = 1;
+    bool all = 2;
+}
+message SecurePacket {
+    uint32 session_id = 1;
+    uint32 counter = 2;
+    bytes payload = 3;
+}
 message Request {
     oneof request_type {
         EnableStreamRequest enable_stream = 1;
         DisableStreamRequest disable_stream = 2;
+        bool get_capabilities = 3;
+        SubscribeRequest subscribe = 4;
+        bool get_state = 5;
+        RegisterRequest register_client = 6;
+        RevokeRequest revoke_client = 7;
+        bytes handshake = 8;
+        SecurePacket secure = 9;
     }
 }
-
 message ErrorResponse { string message = 1; }
-
 message OkResponse {}
-
+message Capabilities {
+    uint32 version = 1;
+    bool secure_required = 2;
+    uint32 features = 3;
+    uint32 max_clients = 4;
+    string noise_protocol = 5;
+}
+message Registration { bytes device_public_key = 1; }
+message HandshakeResponse {
+    uint32 session_id = 1;
+    bytes payload = 2;
+}
+// IDs are stable keymap IDs, ordered from low to high priority.
+// active_layer_ids includes the implicit ZMK default layer.
+message State {
+    repeated uint32 active_layer_ids = 1;
+    uint32 default_layer_id = 2;
+    repeated uint32 layer_order = 3;
+    bytes pressed = 4;
+    uint32 key_count = 5;
+    uint32 sequence = 6;
+    uint32 epoch = 7;
+}
 message Response {
     oneof response_type {
         ErrorResponse error = 1;
         OkResponse ok = 2;
+        Capabilities capabilities = 3;
+        State state = 4;
+        Registration registration = 5;
+        HandshakeResponse handshake = 6;
+        SecurePacket secure = 7;
     }
 }
-
-// Sent when a key is physically pressed or released.
-// behavior_id/param1/param2 come from the active-layer binding at that position.
+// Legacy fields retain their numbers and meaning.
 message KeyEventNotification {
     uint32 position = 1;
     bool pressed = 2;
@@ -33,13 +74,14 @@ message KeyEventNotification {
     uint32 param1 = 4;
     uint32 param2 = 5;
 }
-
-// Sent whenever the highest-active-layer index changes.
 message LayerChangeNotification { uint32 layer_index = 1; }
-
 message Notification {
     oneof notification_type {
         KeyEventNotification key_event = 1;
         LayerChangeNotification layer_change = 2;
+        State state = 3;
+        SecurePacket secure = 4;
     }
+    uint32 sequence = 10;
+    uint32 epoch = 11;
 }

@@ -3,7 +3,7 @@ if(CONFIG_ZMK_INPUT_STREAM_FEATURE)
     # target_sources(app PRIVATE ...)
 
     if(CONFIG_ZMK_INPUT_STREAM_FEATURE_STUDIO_RPC)
-        file(GLOB_RECURSE C_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
+        file(GLOB C_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/studio/*.c)
         target_sources(app PRIVATE ${C_FILES})
 
         list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
@@ -23,4 +23,8 @@ if(CONFIG_ZMK_INPUT_STREAM_FEATURE)
         target_include_directories(app PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/proto)
         add_dependencies(app ${ZEPHYR_CURRENT_LIBRARY})
     endif()
+endif()
+
+if(CONFIG_ZMK_INPUT_STREAM_SECURE)
+  include(cmake/noise.cmake)
 endif()
