@@ -15,10 +15,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/physical_layouts.h>
 #include <zmk/keymap.h>
 #include <zmk/behavior.h>
+#include <zmk/endpoints.h>
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 #include <zephyr/bluetooth/conn.h>
 #include <zmk/ble.h>
-#include <zmk/endpoints.h>
 #endif
 #if IS_ENABLED(CONFIG_ZMK_USB)
 #include <zmk/events/usb_conn_state_changed.h>
@@ -86,7 +86,8 @@ ZMK_SUBSCRIPTION(input_stream_endpoint, zmk_endpoint_changed);
 #if IS_ENABLED(CONFIG_ZMK_USB)
 static int on_usb(const zmk_event_t *event) {
     const struct zmk_usb_conn_state_changed *ev = as_zmk_usb_conn_state_changed(event);
-    if (ev->conn_state != ZMK_USB_CONN_HID)
+    if (zmk_endpoint_get_selected().transport == ZMK_TRANSPORT_USB &&
+        ev->conn_state != ZMK_USB_CONN_HID)
         lost_connection();
     return ZMK_EV_EVENT_BUBBLE;
 }
